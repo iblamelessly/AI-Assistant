@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JARVIS - Personal AI Assistant</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h2>JARVIS</h2>
+          <span class="brand-sub">AI Assistant</span>
+        </div>
+      </div>
+
+      <button class="btn-new-chat" id="btn-new-chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>New Chat</span>
+      </button>
+
+      <div class="sidebar-section">
+        <span class="section-label">Conversations</span>
+        <div class="session-list" id="session-list">
+          <!-- Session items loaded dynamically -->
+        </div>
+      </div>
+
+      <!-- SIDEBAR FOOTER -->
+      <div class="sidebar-footer">
+        <button class="footer-btn" id="btn-open-memory" title="Manage Memories">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"></path>
+            <path d="M9 21h6"></path>
+          </svg>
+          <span>Memory Center</span>
+        </button>
+
+        <button class="footer-btn" id="btn-open-settings" title="Assistant Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Settings</span>
+        </button>
+
+        <div class="system-stats-pill" id="stats-pill" title="Click to refresh system stats">
+          <div class="stat-dot"></div>
+          <span id="stats-summary-text">CPU: ... | RAM: ...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CHAT CONTAINER -->
+    <main class="chat-main">
+      <!-- HEADER -->
+      <header class="chat-header">
+        <div class="chat-header-info">
+          <h3 id="current-session-title">New Conversation</h3>
+          <div class="header-badges">
+            <span class="badge status-badge" id="ollama-status">
+              <span class="pulse-dot"></span> Ollama Online
+            </span>
+            <select class="model-select" id="model-select" title="Change Ollama Model">
+              <!-- Loaded dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button class="icon-btn" id="btn-quick-stats" title="Check System Metrics">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </button>
+          <button class="icon-btn" id="btn-clear-chat" title="Clear Chat History">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- CHAT SCROLL AREA -->
+      <div class="messages-container" id="messages-container">
+        <!-- Welcome Screen (shown when no messages) -->
+        <div class="welcome-card" id="welcome-card">
+          <div class="welcome-avatar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <h2 id="welcome-greeting">Hello Lessly, I am Jarvis.</h2>
+          <p class="welcome-sub">Your personal desktop AI assistant. Powered by local Ollama models with permanent memory & system automation.</p>
+
+          <div class="suggestion-grid">
+            <div class="suggestion-card" data-prompt="Show my current PC system performance and metrics">
+              <span class="suggestion-icon">📊</span>
+              <strong>Check PC Performance</strong>
+              <span>CPU, RAM, battery, and storage metrics</span>
+            </div>
+            <div class="suggestion-card" data-prompt="What do you remember about my career goals and projects?">
+              <span class="suggestion-icon">💼</span>
+              <strong>Review Career & Projects</strong>
+              <span>Explore permanent memories stored about you</span>
+            </div>
+            <div class="suggestion-card" data-prompt="Please open VS Code">
+              <span class="suggestion-icon">💻</span>
+              <strong>Launch Application</strong>
+              <span>Open VS Code, Chrome, Spotify, or Notepad</span>
+            </div>
+            <div class="suggestion-card" data-prompt="I want to learn data engineering techniques next. What do you recommend?">
+              <span class="suggestion-icon">💡</span>
+              <strong>Explore & Plan</strong>
+              <span>Ask for career advice tailored to your goals</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat messages will be appended here -->
+      </div>
+
+      <!-- INPUT CONTAINER -->
+      <div class="input-container">
+        <div class="quick-chips">
+          <button class="chip" data-prompt="Check system stats">⚡ System Stats</button>
+          <button class="chip" data-prompt="Open Notepad">📝 Open Notepad</button>
+          <button class="chip" data-prompt="Open Chrome">🌐 Open Chrome</button>
+          <button class="chip" data-prompt="What are my saved skills and projects?">🧠 My Memories</button>
+        </div>
+
+        <div class="input-box">
+          <textarea
+            id="chat-input"
+            rows="1"
+            placeholder="Ask Jarvis anything or tell me to perform a task... (Shift + Enter for new line)"
+          ></textarea>
+          <button class="btn-send" id="btn-send" title="Send message (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- MEMORY CENTER MODAL -->
+  <div class="modal-overlay" id="memory-modal">
+    <div class="modal-content memory-modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"></path>
+            <path d="M9 21h6"></path>
+          </svg>
+          <div>
+            <h3>Memory Center</h3>
+            <p>Permanent information Jarvis remembers about you.</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btn-close-memory">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- PROFILE BASICS -->
+        <div class="memory-card">
+          <h4>Personal Profile</h4>
+          <div class="profile-grid">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" id="mem-name" placeholder="Your name" />
+            </div>
+            <div class="form-group">
+              <label>Career Goal</label>
+              <input type="text" id="mem-career" placeholder="e.g. Data Analyst" />
+            </div>
+            <div class="form-group span-full">
+              <label>Education</label>
+              <input type="text" id="mem-education" placeholder="e.g. B.Sc Data Analytics" />
+            </div>
+          </div>
+          <button class="btn-save-profile" id="btn-save-profile">Save Profile Changes</button>
+        </div>
+
+        <!-- LIST CATEGORIES -->
+        <div class="memory-lists-grid">
+          <!-- PROJECTS -->
+          <div class="memory-card">
+            <div class="list-card-header">
+              <h4>📂 Projects</h4>
+              <span class="count-badge" id="count-projects">0</span>
+            </div>
+            <div class="tags-container" id="tags-projects"></div>
+            <div class="tag-add-box">
+              <input type="text" id="input-add-project" placeholder="Add project..." />
+              <button class="btn-add-tag" data-cat="projects" data-input="input-add-project">+</button>
+            </div>
+          </div>
+
+          <!-- SKILLS -->
+          <div class="memory-card">
+            <div class="list-card-header">
+              <h4>💡 Skills</h4>
+              <span class="count-badge" id="count-skills">0</span>
+            </div>
+            <div class="tags-container" id="tags-skills"></div>
+            <div class="tag-add-box">
+              <input type="text" id="input-add-skill" placeholder="Add skill..." />
+              <button class="btn-add-tag" data-cat="skills" data-input="input-add-skill">+</button>
+            </div>
+          </div>
+
+          <!-- PREFERENCES -->
+          <div class="memory-card">
+            <div class="list-card-header">
+              <h4>🎯 Preferences</h4>
+              <span class="count-badge" id="count-preferences">0</span>
+            </div>
+            <div class="tags-container" id="tags-preferences"></div>
+            <div class="tag-add-box">
+              <input type="text" id="input-add-preference" placeholder="Add preference..." />
+              <button class="btn-add-tag" data-cat="preferences" data-input="input-add-preference">+</button>
+            </div>
+          </div>
+
+          <!-- OTHER -->
+          <div class="memory-card">
+            <div class="list-card-header">
+              <h4>📝 Notes & Other</h4>
+              <span class="count-badge" id="count-other">0</span>
+            </div>
+            <div class="tags-container" id="tags-other"></div>
+            <div class="tag-add-box">
+              <input type="text" id="input-add-other" placeholder="Add note..." />
+              <button class="btn-add-tag" data-cat="other" data-input="input-add-other">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal-content settings-modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <div>
+            <h3>Assistant Settings</h3>
+            <p>Configure models and connections.</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btn-close-settings">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Ollama Server URL</label>
+          <input type="text" id="setting-ollama-url" value="http://localhost:11434" />
+        </div>
+        <div class="form-group">
+          <label>Default Model</label>
+          <select id="setting-model-select">
+            <!-- Dynamically populated -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Assistant Persona Name</label>
+          <input type="text" id="setting-persona-name" value="Jarvis" />
+        </div>
+
+        <div class="modal-footer-actions">
+          <button class="btn-save-profile" id="btn-save-settings">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

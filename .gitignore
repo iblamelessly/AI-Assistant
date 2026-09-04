@@ -1,3 +1,22 @@
+# Local Storage & Personal Information (Never push to GitHub)
 memory.json
+chat_sessions.json
+*.db
+*.sqlite
+.env
+*.log
+*.bak
+
+# Python Cache & Environments
 __pycache__/
+*.py[cod]
+*$py.class
 .venv/
+venv/
+env/
+ENV/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
