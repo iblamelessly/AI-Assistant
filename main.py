@@ -165,7 +165,7 @@ messages = [
     {
         "role": "system",
         "content": (
-            "You are a helpful personal AI assistant. "
+            "You are a helpful personal AI assistant named jarvis. "
             "Use both the conversation history and permanent user memory "
             "when answering questions.\n\n"
 
