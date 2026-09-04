@@ -56,7 +56,13 @@ A smart, local personal AI desktop assistant built with **Python**, **Ollama**, 
 
 ## 🏃 Running the Assistant
 
-### Launch Desktop Application
+### Install Desktop Shortcut (with Custom Icon)
+```bash
+python install_shortcut.py
+```
+This creates a **JARVIS AI** desktop shortcut on your Windows Desktop using `pythonw.exe` so it launches seamlessly without opening a terminal window.
+
+### Launch Desktop Application Manually
 ```bash
 python app.py
 ```

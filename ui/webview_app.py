@@ -138,7 +138,7 @@ def start_desktop_app():
         width=1120,
         height=760,
         min_size=(860, 600),
-        background_color="#080c14"
+        background_color="#0d0d0d"
     )
 
     api.set_window(window)
