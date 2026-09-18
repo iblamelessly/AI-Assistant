@@ -10,18 +10,21 @@ A smart, local personal AI desktop assistant built with **Python**, **Ollama**, 
 
 ## ✨ Features
 
-- 🖥️ **Modern Desktop GUI**: Sleek dark-mode interface built with native Edge WebView2 runtime (lightweight, responsive, zero Electron bloat).
+- 🎙️ **Bidirectional Voice Control**:
+  - **Speech-to-Text**: Click the microphone button (`🎙️`) to issue direct voice commands.
+  - **Neural Jarvis Voice**: Jarvis speaks back out loud with an English neural voice (Iron Man style) powered by `edge-tts` (with offline fallback).
+  - **Voice Mute Toggle**: Quickly enable or mute speech audio anytime in the header.
+- 💻 **Full Autonomous Laptop & Project Control**:
+  - **PowerShell / Terminal Execution**: Jarvis can run any command (`git status`, `git commit`, `python script.py`, `pip install`, etc.) and displays the live terminal output directly in the chat.
+  - **File Operations**: Read, create, write, and modify files across your machine.
+  - **Hardware Automation**: Adjust laptop volume (*"Volume up"*, *"Mute"*), capture screenshots (*"Take a screenshot"*), and inspect CPU, RAM, Disk, and Battery.
+  - **Application Management**: Launch apps (*"Open VS Code"*, *"Open Chrome"*, *"Open Notepad"*) and kill running processes.
+- 🖥️ **Modern Desktop GUI**: Sleek ChatGPT-style Obsidian Black interface built with native Edge WebView2 runtime (lightweight, responsive, zero Electron bloat).
 - ⚡ **Real-Time Token Streaming**: Snappy token-by-token streaming responses from local Ollama models (`qwen3:1.7b`, `qwen3:4b`, etc.).
 - 🧠 **Dynamic & Async Memory System**:
-  - Automatically analyzes conversation in the background to learn about you (name, education, career goals, projects, skills, preferences).
-  - Background extraction ensures instant chat responses without blocking or dual-latency lag.
+  - Automatically analyzes conversation in the background to learn about you without blocking chat replies.
   - Dynamically injects updated memories into the system prompt on every turn.
 - 📂 **Visual Memory Center**: An interactive dashboard to view, edit, add, or delete memories stored in `memory.json`.
-- ⚙️ **Desktop Automation ("Jarvis" Mode)**:
-  - **Launch Apps**: *"Open Notepad"*, *"Open Chrome"*, *"Open VS Code"*, *"Open Spotify"*, etc.
-  - **System Metrics**: Real-time monitoring of CPU, RAM, Disk, and Battery usage.
-  - **Web Search**: Automatically executes web queries in your default browser.
-  - **Time & Calendar**: Tells the current local time, date, and day of week.
 - 💬 **Multi-Session Chat History**: Save, switch between, and clear past conversation sessions locally.
 - 🔄 **Model Selector**: Detects installed Ollama models and switches models on the fly.
 - 📟 **Dual Mode**: Run as a rich Desktop Application or as a terminal CLI (`python main.py --cli`).

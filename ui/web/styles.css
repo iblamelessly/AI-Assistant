@@ -741,6 +741,110 @@ body {
   stroke: var(--btn-main-text);
 }
 
+/* Microphone Button */
+.btn-mic {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-mic:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-main);
+  border-color: var(--border-focus);
+}
+
+.btn-mic svg {
+  width: 15px;
+  height: 15px;
+}
+
+.btn-mic.listening {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #ef4444 !important;
+  animation: pulseMic 1.2s infinite;
+}
+
+@keyframes pulseMic {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* Voice Toggle Button */
+#btn-toggle-voice.active {
+  color: var(--accent-primary);
+  border-color: rgba(16, 163, 127, 0.4);
+  background-color: rgba(16, 163, 127, 0.12);
+}
+
+/* Terminal & Tool Output Cards */
+.terminal-card {
+  background-color: #050505;
+  border: 1px solid #262626;
+  border-radius: var(--radius-md);
+  margin: 10px 0;
+  overflow: hidden;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+}
+
+.terminal-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background-color: #121212;
+  border-bottom: 1px solid #222222;
+  font-size: 11px;
+}
+
+.terminal-cmd {
+  color: #38bdf8;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
+}
+
+.terminal-status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.terminal-status.success {
+  background-color: rgba(16, 163, 127, 0.2);
+  color: #34d399;
+}
+
+.terminal-status.error {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.terminal-output {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #d1d5db;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* ========================================================
    MODALS
    ======================================================== */

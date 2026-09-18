@@ -1,15 +1,19 @@
-// JARVIS AI Assistant - Desktop Web App Controller
+// JARVIS AI Assistant - Autonomous Agent & Voice Controller
 
 let currentSessionId = null;
 let isStreaming = false;
 let currentAssistantBubble = null;
 let currentStreamBuffer = "";
+let voiceEnabled = true;
+
+let recognition = null;
+let isRecording = false;
 
 // Simple, robust offline markdown parser
 function parseMarkdown(text) {
   if (!text) return "";
-  
-  // Escape HTML tags to prevent XSS
+
+  // Escape HTML tags
   let escaped = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -51,6 +55,61 @@ function parseMarkdown(text) {
   return `<p>${escaped}</p>`;
 }
 
+function escapeHtml(text) {
+  if (!text) return "";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Render tool or terminal execution output into chat bubble
+function renderToolHtml(toolInfo) {
+  if (!toolInfo || !toolInfo.result) return "";
+
+  const toolName = toolInfo.tool || "";
+  const res = toolInfo.result;
+
+  if (toolName === "run_command" || toolName === "run_shell_command") {
+    const isSuccess = res.success;
+    const exitCode = res.exit_code !== undefined ? res.exit_code : (isSuccess ? 0 : 1);
+    const outputText = res.stdout || res.stderr || res.summary || "Command finished.";
+
+    return `
+      <div class="terminal-card">
+        <div class="terminal-card-header">
+          <span class="terminal-cmd">&gt; powershell ${escapeHtml(toolInfo.param || res.command)}</span>
+          <span class="terminal-status ${isSuccess ? 'success' : 'error'}">exit code ${exitCode}</span>
+        </div>
+        <div class="terminal-output">${escapeHtml(outputText)}</div>
+      </div>
+    `;
+  }
+
+  if (toolName === "read_file") {
+    return `
+      <div class="terminal-card">
+        <div class="terminal-card-header">
+          <span class="terminal-cmd">📄 File: ${escapeHtml(toolInfo.param || res.path)}</span>
+          <span class="terminal-status ${res.success ? 'success' : 'error'}">${res.success ? 'Read OK' : 'Error'}</span>
+        </div>
+        <div class="terminal-output">${escapeHtml(res.content || res.summary)}</div>
+      </div>
+    `;
+  }
+
+  if (toolName === "take_screenshot") {
+    return `<div class="tool-badge">📸 Screenshot: ${escapeHtml(res.path || 'Saved to screenshots folder')}</div>`;
+  }
+
+  if (toolName === "set_volume") {
+    return `<div class="tool-badge">🔊 ${escapeHtml(res.summary || res.action || 'Volume updated')}</div>`;
+  }
+
+  const actionDesc = res.summary || res.action || "Action executed";
+  return `<div class="tool-badge">⚡ ${escapeHtml(actionDesc)}</div>`;
+}
+
 // Copy code button handler
 window.copyCode = function(button) {
   const codeBlock = button.closest(".code-block-wrapper").querySelector("pre code");
@@ -66,6 +125,7 @@ window.copyCode = function(button) {
 // UI Initialization
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
+  setupSpeechRecognition();
 
   if (window.pywebview) {
     onAppReady();
@@ -105,6 +165,12 @@ function onAppReady() {
       document.getElementById("welcome-greeting").textContent = `Hello ${userName}, I am Jarvis.`;
     }
 
+    // Voice initial state
+    if (data.voice_enabled !== undefined) {
+      voiceEnabled = data.voice_enabled;
+      updateVoiceButtonUI();
+    }
+
     // Populate memory modal
     populateMemoryUI(data.memory);
 
@@ -115,6 +181,17 @@ function onAppReady() {
   }).catch((err) => {
     console.error("Init app error:", err);
   });
+}
+
+function updateVoiceButtonUI() {
+  const btn = document.getElementById("btn-toggle-voice");
+  if (voiceEnabled) {
+    btn.classList.add("active");
+    btn.title = "Jarvis Voice: ON (Click to Mute)";
+  } else {
+    btn.classList.remove("active");
+    btn.title = "Jarvis Voice: MUTED (Click to Enable)";
+  }
 }
 
 // Render Sessions
@@ -156,7 +233,6 @@ function switchSession(sessionId) {
     currentSessionId = session.id;
     document.getElementById("current-session-title").textContent = session.title || "Conversation";
 
-    // Mark active in sidebar
     document.querySelectorAll(".session-item").forEach((el) => {
       el.classList.toggle("active", el.dataset.id === sessionId);
     });
@@ -204,10 +280,8 @@ function appendMessageBubble(role, content, toolInfo = null) {
   bubble.className = "message-bubble";
 
   let htmlContent = "";
-
-  if (toolInfo && toolInfo.result) {
-    const actionDesc = toolInfo.result.summary || toolInfo.result.action || "Action executed";
-    htmlContent += `<div class="tool-badge">⚡ ${actionDesc}</div>`;
+  if (toolInfo) {
+    htmlContent += renderToolHtml(toolInfo);
   }
 
   htmlContent += parseMarkdown(content);
@@ -221,7 +295,16 @@ function appendMessageBubble(role, content, toolInfo = null) {
   return bubble;
 }
 
-// Streaming handlers called by Python
+// Live tool execution callback during stream
+window.onToolExecuted = function(toolInfo) {
+  if (currentAssistantBubble) {
+    const toolHtml = renderToolHtml(toolInfo);
+    currentAssistantBubble.insertAdjacentHTML("afterbegin", toolHtml);
+    scrollToBottom();
+  }
+};
+
+// Streaming chunk handler
 window.onStreamChunk = function(chunk) {
   currentStreamBuffer += chunk;
   if (currentAssistantBubble) {
@@ -230,18 +313,31 @@ window.onStreamChunk = function(chunk) {
   }
 };
 
-window.onStreamComplete = function(fullResponse, toolInfo) {
+// Stream complete handler with audio speech response
+window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
   isStreaming = false;
   document.getElementById("btn-send").disabled = false;
 
   if (currentAssistantBubble) {
     let finalHtml = "";
-    if (toolInfo && toolInfo.result) {
-      const actionDesc = toolInfo.result.summary || toolInfo.result.action || "Action executed";
-      finalHtml += `<div class="tool-badge">⚡ ${actionDesc}</div>`;
+    if (toolInfo) {
+      finalHtml += renderToolHtml(toolInfo);
     }
     finalHtml += parseMarkdown(fullResponse);
     currentAssistantBubble.innerHTML = finalHtml;
+  }
+
+  // Play Neural Audio Speech if enabled
+  if (audioB64 && voiceEnabled) {
+    try {
+      const audioEl = document.getElementById("jarvis-audio");
+      if (audioEl) {
+        audioEl.src = "data:audio/mp3;base64," + audioB64;
+        audioEl.play().catch(e => console.warn("Audio playback failed:", e));
+      }
+    } catch (err) {
+      console.warn("Audio play error:", err);
+    }
   }
 
   currentAssistantBubble = null;
@@ -302,6 +398,79 @@ function sendMessage() {
   });
 }
 
+// Voice Recognition Setup
+function setupSpeechRecognition() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    console.warn("Speech Recognition not natively supported in WebView2.");
+    return;
+  }
+
+  try {
+    recognition = new SpeechRec();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => {
+      isRecording = true;
+      document.getElementById("btn-mic").classList.add("listening");
+    };
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        transcript += event.results[i][0].transcript;
+      }
+      const input = document.getElementById("chat-input");
+      input.value = transcript;
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 140) + "px";
+    };
+
+    recognition.onerror = (event) => {
+      console.warn("Speech recognition error:", event.error);
+      stopRecording();
+    };
+
+    recognition.onend = () => {
+      stopRecording();
+      const input = document.getElementById("chat-input");
+      if (input.value.trim() && !isStreaming) {
+        sendMessage();
+      }
+    };
+  } catch (e) {
+    console.warn("Error setting up speech recognition:", e);
+  }
+}
+
+function toggleRecording() {
+  if (!recognition) {
+    setupSpeechRecognition();
+  }
+  if (!recognition) {
+    alert("Speech recognition is not supported in this environment. You can type commands directly!");
+    return;
+  }
+
+  if (isRecording) {
+    recognition.stop();
+  } else {
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn("Recognition start error:", e);
+    }
+  }
+}
+
+function stopRecording() {
+  isRecording = false;
+  const micBtn = document.getElementById("btn-mic");
+  if (micBtn) micBtn.classList.remove("listening");
+}
+
 // Memory Center Functions
 function populateMemoryUI(memory) {
   if (!memory || !memory.user) return;
@@ -332,7 +501,7 @@ function renderTags(category, items) {
     const tag = document.createElement("div");
     tag.className = "tag-item";
     tag.innerHTML = `
-      <span>${item}</span>
+      <span>${escapeHtml(item)}</span>
       <span class="btn-remove-tag" title="Remove" onclick="removeMemoryItem('${category}', ${idx})">&times;</span>
     `;
     container.appendChild(tag);
@@ -390,6 +559,16 @@ function setupEventListeners() {
   });
 
   document.getElementById("btn-send").addEventListener("click", sendMessage);
+
+  // Microphone click
+  document.getElementById("btn-mic").addEventListener("click", toggleRecording);
+
+  // Voice toggle button
+  document.getElementById("btn-toggle-voice").addEventListener("click", () => {
+    voiceEnabled = !voiceEnabled;
+    updateVoiceButtonUI();
+    window.pywebview.api.toggle_voice(voiceEnabled);
+  });
 
   // New Chat button
   document.getElementById("btn-new-chat").addEventListener("click", () => {

@@ -79,6 +79,12 @@
         </div>
 
         <div class="header-actions">
+          <button class="icon-btn active" id="btn-toggle-voice" title="Jarvis Voice: ON">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+          </button>
           <button class="icon-btn" id="btn-quick-stats" title="Check System Metrics">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -137,18 +143,27 @@
       <!-- INPUT CONTAINER -->
       <div class="input-container">
         <div class="quick-chips">
-          <button class="chip" data-prompt="Check system stats">⚡ System Stats</button>
-          <button class="chip" data-prompt="Open Notepad">📝 Open Notepad</button>
-          <button class="chip" data-prompt="Open Chrome">🌐 Open Chrome</button>
-          <button class="chip" data-prompt="What are my saved skills and projects?">🧠 My Memories</button>
+          <button class="chip" data-prompt="Check my git status">⚡ Git Status</button>
+          <button class="chip" data-prompt="Show system performance metrics">📊 System Stats</button>
+          <button class="chip" data-prompt="Take a screenshot">📸 Screenshot</button>
+          <button class="chip" data-prompt="Turn up laptop volume">🔊 Volume Up</button>
+          <button class="chip" data-prompt="Open VS Code">💻 Open VS Code</button>
         </div>
 
         <div class="input-box">
           <textarea
             id="chat-input"
             rows="1"
-            placeholder="Ask Jarvis anything or tell me to perform a task... (Shift + Enter for new line)"
+            placeholder="Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)"
           ></textarea>
+          <button class="btn-mic" id="btn-mic" title="Voice Input (Click to speak)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
           <button class="btn-send" id="btn-send" title="Send message (Enter)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -156,6 +171,7 @@
             </svg>
           </button>
         </div>
+        <audio id="jarvis-audio" autoplay style="display:none;"></audio>
       </div>
     </main>
   </div>
