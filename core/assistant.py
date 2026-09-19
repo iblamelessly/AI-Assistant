@@ -55,7 +55,7 @@ class AssistantEngine:
     def get_installed_models(self):
         """Fetch available models based on active provider."""
         if self.provider == "groq":
-            return [m["id"] for m in AVAILABLE_GROQ_MODELS]
+            return [m["id"] for m in self.groq_client.get_dynamic_models()]
         else:
             try:
                 r = requests.get(f"{self.ollama_url}/api/tags", timeout=3)

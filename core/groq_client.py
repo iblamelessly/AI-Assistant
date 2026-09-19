@@ -2,17 +2,20 @@ import json
 import requests
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b"
 
 AVAILABLE_GROQ_MODELS = [
-    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Recommended - Most Intelligent)"},
-    {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B (Fastest)"},
-    {"id": "deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 70B (Deep Reasoning)"},
-    {"id": "mixtral-8x7b-32768", "name": "Mixtral 8x7B (Long Context)"}
+    {"id": "qwen/qwen3.8-27b", "name": "Qwen 3.8 27B (Recommended - Fast & Intelligent)"},
+    {"id": "openai/gpt-oss-120b", "name": "OpenAI GPT-OSS 120B (Deep Reasoning)"},
+    {"id": "groq/compound-mini", "name": "Groq Compound Mini (Fast Autonomous Agent)"},
+    {"id": "groq/compound", "name": "Groq Compound (Agent System)"},
+    {"id": "openai/gpt-oss-20b", "name": "OpenAI GPT-OSS 20B (Instant)"},
+    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Meta)"},
+    {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B (Instant)"}
 ]
 
 class GroqClient:
-    """Client for Groq Cloud ultra-fast inference using Llama 3.3 70B."""
+    """Client for Groq Cloud ultra-fast inference with dynamic model detection."""
 
     def __init__(self, api_key: str = "", model: str = DEFAULT_GROQ_MODEL):
         self.api_key = api_key.strip()
@@ -23,6 +26,29 @@ class GroqClient:
 
     def set_model(self, model: str):
         self.model = model
+
+    def get_dynamic_models(self) -> list:
+        """Dynamically fetch models available to the current Groq API key."""
+        if not self.is_configured():
+            return AVAILABLE_GROQ_MODELS
+        try:
+            r = requests.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=4
+            )
+            if r.status_code == 200:
+                data = r.json().get("data", [])
+                models = []
+                for item in data:
+                    mid = item.get("id", "")
+                    if mid and "whisper" not in mid and "guard" not in mid and "orpheus" not in mid:
+                        models.append({"id": mid, "name": mid})
+                if models:
+                    return models
+        except Exception:
+            pass
+        return AVAILABLE_GROQ_MODELS
 
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key) > 10)
@@ -79,6 +105,12 @@ class GroqClient:
         full_content = ""
         try:
             response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
+
+            if response.status_code == 404 and self.model != "qwen/qwen3.8-27b":
+                # Automatically fallback to available working model
+                self.model = "qwen/qwen3.8-27b"
+                payload["model"] = self.model
+                response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
 
             if response.status_code == 401:
                 err_msg = "❌ Error: Invalid Groq API Key. Please check your key in Settings."
