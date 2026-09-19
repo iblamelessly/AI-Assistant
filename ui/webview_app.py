@@ -8,15 +8,18 @@ from core.history import HistoryManager
 from core.tools import AssistantTools
 from core.assistant import AssistantEngine
 from core.voice import VoiceEngine
+from core.config import ConfigManager
+from core.permissions import PermissionGuard
 
 class AssistantApi:
     """Python API bridge exposed to the Webview UI."""
 
-    def __init__(self, memory_mgr, history_mgr, engine, voice_engine):
+    def __init__(self, memory_mgr, history_mgr, engine, voice_engine, config_mgr=None):
         self.memory_mgr = memory_mgr
         self.history_mgr = history_mgr
         self.engine = engine
         self.voice_engine = voice_engine
+        self.config_mgr = config_mgr if config_mgr else (getattr(engine, "config_mgr", None) or ConfigManager())
         self._window = None
 
     def set_window(self, window):
@@ -42,7 +45,8 @@ class AssistantApi:
             "current_model": self.engine.model,
             "memory": self.memory_mgr.get_memory(),
             "system_stats": AssistantTools.get_system_stats(),
-            "voice_enabled": self.voice_engine.is_enabled()
+            "voice_enabled": self.voice_engine.is_enabled() if self.voice_engine else False,
+            "config": self.config_mgr.get_all()
         }
 
     def send_message(self, user_message, session_id):
@@ -76,8 +80,10 @@ class AssistantApi:
         return {"status": "started"}
 
     def toggle_voice(self, enabled):
-        self.voice_engine.set_enabled(bool(enabled))
-        return self.voice_engine.is_enabled()
+        if self.voice_engine:
+            self.voice_engine.set_enabled(bool(enabled))
+            return self.voice_engine.is_enabled()
+        return False
 
     def get_sessions(self):
         return self.history_mgr.list_sessions()
@@ -133,15 +139,52 @@ class AssistantApi:
         """Allows direct execution of PowerShell / terminal commands."""
         return AssistantTools.run_shell_command(command)
 
+    def save_settings(self, settings):
+        """Save settings updated from frontend UI."""
+        if not isinstance(settings, dict):
+            return {"status": "error", "message": "Invalid settings payload"}
+
+        self.config_mgr.update_settings(settings)
+
+        # Apply settings to assistant engine
+        if "provider" in settings:
+            self.engine.set_provider(settings["provider"])
+        if "groq_api_key" in settings:
+            self.engine.set_groq_api_key(settings["groq_api_key"])
+        if "groq_model" in settings and self.engine.provider == "groq":
+            self.engine.set_model(settings["groq_model"])
+        if "ollama_model" in settings and self.engine.provider == "ollama":
+            self.engine.set_model(settings["ollama_model"])
+        if "ollama_url" in settings:
+            self.engine.ollama_url = settings["ollama_url"].rstrip("/")
+            self.engine.chat_url = f"{self.engine.ollama_url}/api/chat"
+        if "confirm_sensitive_actions" in settings:
+            self.engine.permission_guard.require_destructive_confirm = bool(settings["confirm_sensitive_actions"])
+        if "confirm_personal_data_access" in settings:
+            self.engine.permission_guard.require_privacy_confirm = bool(settings["confirm_personal_data_access"])
+
+        return {"status": "success", "config": self.config_mgr.get_all()}
+
 
 def start_desktop_app():
     """Initializes and runs the Jarvis PyWebView desktop application with full autonomous agent capabilities."""
+    config_mgr = ConfigManager()
     memory_mgr = MemoryManager()
     history_mgr = HistoryManager()
-    voice_engine = VoiceEngine(enabled=True)
-    engine = AssistantEngine(memory_mgr, history_mgr, voice_engine=voice_engine)
+    permission_guard = PermissionGuard(
+        require_destructive_confirm=config_mgr.get("confirm_sensitive_actions", True),
+        require_privacy_confirm=config_mgr.get("confirm_personal_data_access", True)
+    )
+    voice_engine = VoiceEngine(enabled=config_mgr.get("voice_enabled", True))
+    engine = AssistantEngine(
+        memory_mgr=memory_mgr,
+        history_mgr=history_mgr,
+        config_mgr=config_mgr,
+        voice_engine=voice_engine,
+        permission_guard=permission_guard
+    )
 
-    api = AssistantApi(memory_mgr, history_mgr, engine, voice_engine)
+    api = AssistantApi(memory_mgr, history_mgr, engine, voice_engine, config_mgr=config_mgr)
 
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "index.html")
 
