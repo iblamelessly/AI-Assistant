@@ -526,7 +526,46 @@ body {
   border-radius: var(--radius-lg);
   font-size: 14px;
   line-height: 1.6;
-  user-select: text;
+  position: relative;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.message-bubble *,
+.terminal-output,
+.terminal-output *,
+.terminal-card *,
+pre, code,
+textarea, input {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.btn-copy-message {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(33, 33, 33, 0.85);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s, background 0.2s;
+  z-index: 5;
+  user-select: none !important;
+}
+
+.message-row:hover .btn-copy-message {
+  opacity: 1;
+}
+
+.btn-copy-message:hover {
+  color: var(--text-main);
+  background: var(--bg-card-hover);
+  border-color: var(--border-focus);
 }
 
 /* User Message: Clean dark pill like ChatGPT */

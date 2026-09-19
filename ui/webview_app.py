@@ -10,16 +10,18 @@ from core.assistant import AssistantEngine
 from core.voice import VoiceEngine
 from core.config import ConfigManager
 from core.permissions import PermissionGuard
+from core.mic import MicrophoneEngine
 
 class AssistantApi:
     """Python API bridge exposed to the Webview UI."""
 
-    def __init__(self, memory_mgr, history_mgr, engine, voice_engine, config_mgr=None):
+    def __init__(self, memory_mgr, history_mgr, engine, voice_engine, config_mgr=None, mic_engine=None):
         self.memory_mgr = memory_mgr
         self.history_mgr = history_mgr
         self.engine = engine
         self.voice_engine = voice_engine
         self.config_mgr = config_mgr if config_mgr else (getattr(engine, "config_mgr", None) or ConfigManager())
+        self.mic_engine = mic_engine if mic_engine else MicrophoneEngine()
         self._window = None
 
     def set_window(self, window):
@@ -165,6 +167,22 @@ class AssistantApi:
 
         return {"status": "success", "config": self.config_mgr.get_all()}
 
+    def start_voice_recording(self):
+        """Starts hardware microphone recording in background."""
+        if self.mic_engine:
+            ok = self.mic_engine.start_recording()
+            return {"status": "recording" if ok else "error"}
+        return {"status": "error", "message": "Microphone engine not available"}
+
+    def stop_voice_recording(self):
+        """Stops microphone recording and transcribes via Groq Whisper."""
+        if self.mic_engine:
+            wav_bytes = self.mic_engine.stop_recording()
+            groq_key = self.config_mgr.get("groq_api_key", "")
+            text = self.mic_engine.transcribe(wav_bytes, groq_api_key=groq_key)
+            return {"status": "success", "text": text}
+        return {"status": "error", "text": ""}
+
 
 def start_desktop_app():
     """Initializes and runs the Jarvis PyWebView desktop application with full autonomous agent capabilities."""
@@ -176,6 +194,7 @@ def start_desktop_app():
         require_privacy_confirm=config_mgr.get("confirm_personal_data_access", True)
     )
     voice_engine = VoiceEngine(enabled=config_mgr.get("voice_enabled", True))
+    mic_engine = MicrophoneEngine()
     engine = AssistantEngine(
         memory_mgr=memory_mgr,
         history_mgr=history_mgr,
@@ -184,7 +203,7 @@ def start_desktop_app():
         permission_guard=permission_guard
     )
 
-    api = AssistantApi(memory_mgr, history_mgr, engine, voice_engine, config_mgr=config_mgr)
+    api = AssistantApi(memory_mgr, history_mgr, engine, voice_engine, config_mgr=config_mgr, mic_engine=mic_engine)
 
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "index.html")
 

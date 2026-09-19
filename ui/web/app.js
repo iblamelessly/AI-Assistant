@@ -110,22 +110,68 @@ function renderToolHtml(toolInfo) {
   return `<div class="tool-badge">⚡ ${escapeHtml(actionDesc)}</div>`;
 }
 
+// Universal Clipboard Copy with Fallback
+function copyToClipboard(text, button, successLabel = "✓ Copied") {
+  if (!text) return;
+  const originalHtml = button.innerHTML;
+
+  const showSuccess = () => {
+    button.innerHTML = successLabel;
+    button.style.color = "var(--accent-primary)";
+    setTimeout(() => {
+      button.innerHTML = originalHtml;
+      button.style.color = "";
+    }, 2000);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showSuccess).catch(() => {
+      fallbackCopy(text, showSuccess);
+    });
+  } else {
+    fallbackCopy(text, showSuccess);
+  }
+}
+
+function fallbackCopy(text, cb) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  ta.style.top = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand("copy");
+    if (cb) cb();
+  } catch (err) {
+    console.error("Clipboard copy failed:", err);
+  }
+  document.body.removeChild(ta);
+}
+
 // Copy code button handler
 window.copyCode = function(button) {
   const codeBlock = button.closest(".code-block-wrapper").querySelector("pre code");
   if (codeBlock) {
-    const text = codeBlock.innerText;
-    navigator.clipboard.writeText(text).then(() => {
-      button.innerText = "Copied!";
-      setTimeout(() => { button.innerText = "Copy"; }, 2000);
-    });
+    copyToClipboard(codeBlock.innerText, button, "✓ Copied");
   }
+};
+
+// Copy message text handler
+window.copyMessage = function(button) {
+  const bubble = button.closest(".message-bubble");
+  if (!bubble) return;
+  const clone = bubble.cloneNode(true);
+  clone.querySelectorAll(".btn-copy-message, .btn-copy-code, .permission-prompt-actions, .tool-badge, .terminal-card").forEach(el => el.remove());
+  const text = clone.innerText.trim();
+  copyToClipboard(text, button, "✓ Copied");
 };
 
 // UI Initialization
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
-  setupSpeechRecognition();
 
   if (window.pywebview) {
     onAppReady();
@@ -303,7 +349,7 @@ function appendMessageBubble(role, content, toolInfo = null) {
   const bubble = document.createElement("div");
   bubble.className = "message-bubble";
 
-  let htmlContent = "";
+  let htmlContent = '<button class="btn-copy-message" onclick="copyMessage(this)" title="Copy message text">📋 Copy</button>';
   if (toolInfo) {
     htmlContent += renderToolHtml(toolInfo);
   }
@@ -354,11 +400,21 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
   document.getElementById("btn-send").disabled = false;
 
   if (currentAssistantBubble) {
-    let finalHtml = "";
+    let finalHtml = '<button class="btn-copy-message" onclick="copyMessage(this)" title="Copy message text">📋 Copy</button>';
     if (toolInfo) {
       finalHtml += renderToolHtml(toolInfo);
     }
     finalHtml += parseMarkdown(fullResponse);
+
+    if (fullResponse.includes("[Yes / No]") || fullResponse.includes("[Yes/No]") || fullResponse.includes("[Overwrite / Cancel]") || fullResponse.includes("Proceed?")) {
+      finalHtml += `
+        <div class="permission-prompt-actions" style="margin-top:10px;">
+          <button class="btn-confirm-yes" onclick="replyConfirmation('Yes, proceed')">✓ Approve / Yes</button>
+          <button class="btn-confirm-no" onclick="replyConfirmation('No, cancel')">✕ Cancel / No</button>
+        </div>
+      `;
+    }
+
     currentAssistantBubble.innerHTML = finalHtml;
   }
 
@@ -433,75 +489,61 @@ function sendMessage() {
   });
 }
 
-// Voice Recognition Setup
-function setupSpeechRecognition() {
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) {
-    console.warn("Speech Recognition not natively supported in WebView2.");
-    return;
-  }
-
-  try {
-    recognition = new SpeechRec();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onstart = () => {
-      isRecording = true;
-      document.getElementById("btn-mic").classList.add("listening");
-    };
-
-    recognition.onresult = (event) => {
-      let transcript = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        transcript += event.results[i][0].transcript;
-      }
-      const input = document.getElementById("chat-input");
-      input.value = transcript;
-      input.style.height = "auto";
-      input.style.height = Math.min(input.scrollHeight, 140) + "px";
-    };
-
-    recognition.onerror = (event) => {
-      console.warn("Speech recognition error:", event.error);
-      stopRecording();
-    };
-
-    recognition.onend = () => {
-      stopRecording();
-      const input = document.getElementById("chat-input");
-      if (input.value.trim() && !isStreaming) {
-        sendMessage();
-      }
-    };
-  } catch (e) {
-    console.warn("Error setting up speech recognition:", e);
-  }
-}
+// Hardware Microphone & Voice Input Controller (Groq Whisper Bridge)
+let isNativeRecording = false;
+let recordingAutoStopTimer = null;
 
 function toggleRecording() {
-  if (!recognition) {
-    setupSpeechRecognition();
-  }
-  if (!recognition) {
-    alert("Speech recognition is not supported in this environment. You can type commands directly!");
-    return;
-  }
+  const micBtn = document.getElementById("btn-mic");
+  const chatInput = document.getElementById("chat-input");
 
-  if (isRecording) {
-    recognition.stop();
+  if (!isNativeRecording) {
+    // Start Recording from hardware microphone
+    isNativeRecording = true;
+    micBtn.classList.add("listening");
+    chatInput.placeholder = "🎙️ Listening... Speak now (Click mic or press Enter to send)";
+
+    window.pywebview.api.start_voice_recording().then((res) => {
+      if (res && res.status === "error") {
+        console.warn("Could not start recording:", res.message);
+        stopRecordingUI();
+      }
+    }).catch(err => {
+      console.warn("Voice recording start error:", err);
+      stopRecordingUI();
+    });
+
+    // Auto-stop after 8 seconds if user forgets to click stop
+    clearTimeout(recordingAutoStopTimer);
+    recordingAutoStopTimer = setTimeout(() => {
+      if (isNativeRecording) {
+        toggleRecording();
+      }
+    }, 8000);
+
   } else {
-    try {
-      recognition.start();
-    } catch (e) {
-      console.warn("Recognition start error:", e);
-    }
+    // Stop Recording & Transcribe with Groq Whisper
+    clearTimeout(recordingAutoStopTimer);
+    stopRecordingUI();
+    chatInput.placeholder = "⚡ Transcribing your voice with Groq Whisper...";
+
+    window.pywebview.api.stop_voice_recording().then((res) => {
+      chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
+      if (res && res.text) {
+        chatInput.value = res.text;
+        chatInput.style.height = "auto";
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
+        sendMessage();
+      }
+    }).catch(err => {
+      console.error("Transcription error:", err);
+      chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
+    });
   }
 }
 
-function stopRecording() {
-  isRecording = false;
+function stopRecordingUI() {
+  isNativeRecording = false;
   const micBtn = document.getElementById("btn-mic");
   if (micBtn) micBtn.classList.remove("listening");
 }
