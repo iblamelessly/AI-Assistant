@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import webbrowser
 import datetime
@@ -203,25 +204,69 @@ class AssistantTools:
 
     @staticmethod
     def set_volume(action_or_level: str) -> dict:
-        """Adjusts master volume: 'up', 'down', 'mute', or steps."""
+        """Adjusts laptop master volume via Windows Core Audio API (pycaw)."""
         action = str(action_or_level).lower().strip()
         try:
-            if "mute" in action:
-                ctypes.windll.user32.keybd_event(VK_VOLUME_MUTE, 0, 0, 0)
-                ctypes.windll.user32.keybd_event(VK_VOLUME_MUTE, 0, 2, 0)
-                return {"success": True, "action": "Toggled volume mute/unmute", "summary": "Toggled volume mute state."}
-            elif "down" in action or "lower" in action:
-                for _ in range(5):
-                    ctypes.windll.user32.keybd_event(VK_VOLUME_DOWN, 0, 0, 0)
-                    ctypes.windll.user32.keybd_event(VK_VOLUME_DOWN, 0, 2, 0)
-                return {"success": True, "action": "Lowered volume by 10%", "summary": "Lowered master volume."}
+            from pycaw.pycaw import AudioUtilities
+            speakers = AudioUtilities.GetSpeakers()
+            endpoint = speakers.EndpointVolume
+            current_scalar = endpoint.GetMasterVolumeLevelScalar()
+
+            # Parse numeric percentage (e.g. '50', '80%', 'set to 75')
+            num_match = re.search(r"(\d+)", action)
+
+            if "unmute" in action:
+                endpoint.SetMute(0, None)
+                return {"success": True, "action": "Unmuted laptop volume", "summary": "Unmuted audio."}
+            elif "mute" in action:
+                endpoint.SetMute(1, None)
+                return {"success": True, "action": "Muted laptop volume", "summary": "Muted audio."}
+            elif num_match and ("to" in action or "at" in action or len(action) <= 4):
+                target_pct = max(0, min(100, int(num_match.group(1))))
+                endpoint.SetMasterVolumeLevelScalar(target_pct / 100.0, None)
+                endpoint.SetMute(0, None)
+                return {
+                    "success": True,
+                    "action": f"Set master volume to {target_pct}%",
+                    "summary": f"Master volume set to {target_pct}%."
+                }
+            elif "down" in action or "lower" in action or "quieter" in action:
+                new_scalar = max(0.0, current_scalar - 0.10)
+                endpoint.SetMasterVolumeLevelScalar(new_scalar, None)
+                new_pct = round(new_scalar * 100)
+                return {
+                    "success": True,
+                    "action": f"Lowered volume to {new_pct}%",
+                    "summary": f"Lowered volume by 10% (now at {new_pct}%)."
+                }
             else:
-                for _ in range(5):
-                    ctypes.windll.user32.keybd_event(VK_VOLUME_UP, 0, 0, 0)
-                    ctypes.windll.user32.keybd_event(VK_VOLUME_UP, 0, 2, 0)
-                return {"success": True, "action": "Raised volume by 10%", "summary": "Raised master volume."}
+                # Default / 'up' / 'higher' / 'louder'
+                new_scalar = min(1.0, current_scalar + 0.10)
+                endpoint.SetMasterVolumeLevelScalar(new_scalar, None)
+                endpoint.SetMute(0, None)
+                new_pct = round(new_scalar * 100)
+                return {
+                    "success": True,
+                    "action": f"Raised volume to {new_pct}%",
+                    "summary": f"Raised volume by 10% (now at {new_pct}%)."
+                }
         except Exception as e:
-            return {"success": False, "error": str(e), "summary": f"Failed to adjust volume: {e}"}
+            # Fallback to keybd_event if pycaw encounters an error
+            try:
+                if "mute" in action:
+                    ctypes.windll.user32.keybd_event(VK_VOLUME_MUTE, 0, 0, 0)
+                    ctypes.windll.user32.keybd_event(VK_VOLUME_MUTE, 0, 2, 0)
+                elif "down" in action:
+                    for _ in range(5):
+                        ctypes.windll.user32.keybd_event(VK_VOLUME_DOWN, 0, 0, 0)
+                        ctypes.windll.user32.keybd_event(VK_VOLUME_DOWN, 0, 2, 0)
+                else:
+                    for _ in range(5):
+                        ctypes.windll.user32.keybd_event(VK_VOLUME_UP, 0, 0, 0)
+                        ctypes.windll.user32.keybd_event(VK_VOLUME_UP, 0, 2, 0)
+                return {"success": True, "action": "Adjusted volume via key simulation", "summary": "Volume adjusted."}
+            except Exception as e2:
+                return {"success": False, "error": str(e), "summary": f"Failed to adjust volume: {e}"}
 
     @staticmethod
     def take_screenshot(filename: str = None) -> dict:
