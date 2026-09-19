@@ -291,21 +291,68 @@
 
       <div class="modal-body">
         <div class="form-group">
-          <label>Ollama Server URL</label>
-          <input type="text" id="setting-ollama-url" value="http://localhost:11434" />
-        </div>
-        <div class="form-group">
-          <label>Default Model</label>
-          <select id="setting-model-select">
-            <!-- Dynamically populated -->
+          <label>Intelligence Provider</label>
+          <select id="setting-provider-select">
+            <option value="groq">Groq Cloud (Llama 3.3 70B - Lightning Fast ⚡)</option>
+            <option value="ollama">Local Ollama (Offline 🏠)</option>
           </select>
         </div>
+
+        <!-- GROQ SETTINGS -->
+        <div id="section-groq-settings">
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Groq API Key</label>
+              <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent-primary); font-size:11px; text-decoration:none;">Get free key &rarr;</a>
+            </div>
+            <input type="password" id="setting-groq-key" placeholder="gsk_..." />
+          </div>
+          <div class="form-group">
+            <label>Groq Model</label>
+            <select id="setting-groq-model">
+              <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Recommended - Most Capable)</option>
+              <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fastest)</option>
+              <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 70B (Deep Reasoning)</option>
+              <option value="mixtral-8x7b-32768">Mixtral 8x7B (Long Context)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- OLLAMA SETTINGS -->
+        <div id="section-ollama-settings" style="display:none;">
+          <div class="form-group">
+            <label>Ollama Server URL</label>
+            <input type="text" id="setting-ollama-url" value="http://localhost:11434" />
+          </div>
+          <div class="form-group">
+            <label>Local Model</label>
+            <select id="setting-model-select">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+        </div>
+
         <div class="form-group">
           <label>Assistant Persona Name</label>
           <input type="text" id="setting-persona-name" value="Jarvis" />
         </div>
 
-        <div class="modal-footer-actions">
+        <!-- HUMAN SAFETY & PERMISSION GUARDS -->
+        <div class="memory-card" style="margin-top: 6px;">
+          <h4 style="font-size:12px; color:var(--text-main);">🛡️ Human-in-the-Loop Safety Guards</h4>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--text-muted); margin-top:4px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="setting-confirm-actions" checked />
+              <span>Ask confirmation before destructive actions (file delete, kill process)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="setting-confirm-privacy" checked />
+              <span>Require permission before accessing personal memory records</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer-actions" style="margin-top:10px;">
           <button class="btn-save-profile" id="btn-save-settings">Save Settings</button>
         </div>
       </div>

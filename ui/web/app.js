@@ -156,6 +156,30 @@ function onAppReady() {
       settingModelSelect.appendChild(opt2);
     });
 
+    // Populate provider & settings
+    if (data.config) {
+      const cfg = data.config;
+      const provSelect = document.getElementById("setting-provider-select");
+      if (provSelect) provSelect.value = cfg.provider || "groq";
+
+      const keyInput = document.getElementById("setting-groq-key");
+      if (keyInput) keyInput.value = cfg.groq_api_key || "";
+
+      const groqModelSelect = document.getElementById("setting-groq-model");
+      if (groqModelSelect) groqModelSelect.value = cfg.groq_model || "llama-3.3-70b-versatile";
+
+      const ollamaUrlInput = document.getElementById("setting-ollama-url");
+      if (ollamaUrlInput) ollamaUrlInput.value = cfg.ollama_url || "http://localhost:11434";
+
+      const confirmActions = document.getElementById("setting-confirm-actions");
+      if (confirmActions) confirmActions.checked = cfg.confirm_sensitive_actions !== false;
+
+      const confirmPrivacy = document.getElementById("setting-confirm-privacy");
+      if (confirmPrivacy) confirmPrivacy.checked = cfg.confirm_personal_data_access !== false;
+
+      toggleProviderSections(cfg.provider || "groq");
+    }
+
     // Populate sessions
     renderSessionList(data.sessions, data.active_session_id);
 
@@ -285,6 +309,17 @@ function appendMessageBubble(role, content, toolInfo = null) {
   }
 
   htmlContent += parseMarkdown(content);
+
+  // If Jarvis asks a human confirmation question, add interactive Yes/No buttons
+  if (role === "assistant" && (content.includes("[Yes / No]") || content.includes("[Yes/No]") || content.includes("[Overwrite / Cancel]") || content.includes("Proceed?"))) {
+    htmlContent += `
+      <div class="permission-prompt-actions" style="margin-top:10px;">
+        <button class="btn-confirm-yes" onclick="replyConfirmation('Yes, proceed')">✓ Approve / Yes</button>
+        <button class="btn-confirm-no" onclick="replyConfirmation('No, cancel')">✕ Cancel / No</button>
+      </div>
+    `;
+  }
+
   bubble.innerHTML = htmlContent;
 
   row.appendChild(avatar);
@@ -656,6 +691,31 @@ function setupEventListeners() {
     });
   });
 
+function toggleProviderSections(provider) {
+  const groqSection = document.getElementById("section-groq-settings");
+  const ollamaSection = document.getElementById("section-ollama-settings");
+  if (provider === "groq") {
+    if (groqSection) groqSection.style.display = "block";
+    if (ollamaSection) ollamaSection.style.display = "none";
+  } else {
+    if (groqSection) groqSection.style.display = "none";
+    if (ollamaSection) ollamaSection.style.display = "block";
+  }
+}
+
+window.replyConfirmation = function(choice) {
+  const input = document.getElementById("chat-input");
+  input.value = choice;
+  sendMessage();
+};
+
+  const provSelect = document.getElementById("setting-provider-select");
+  if (provSelect) {
+    provSelect.addEventListener("change", function() {
+      toggleProviderSections(this.value);
+    });
+  }
+
   // Modal open/close: Settings
   const settingsModal = document.getElementById("settings-modal");
   document.getElementById("btn-open-settings").addEventListener("click", () => {
@@ -666,9 +726,28 @@ function setupEventListeners() {
   });
 
   document.getElementById("btn-save-settings").addEventListener("click", () => {
-    const model = document.getElementById("setting-model-select").value;
-    window.pywebview.api.set_model(model);
-    document.getElementById("model-select").value = model;
-    settingsModal.classList.remove("active");
+    const provider = document.getElementById("setting-provider-select").value;
+    const groqKey = document.getElementById("setting-groq-key").value.trim();
+    const groqModel = document.getElementById("setting-groq-model").value;
+    const ollamaUrl = document.getElementById("setting-ollama-url").value.trim();
+    const ollamaModel = document.getElementById("setting-model-select").value;
+    const personaName = document.getElementById("setting-persona-name").value.trim();
+    const confirmActions = document.getElementById("setting-confirm-actions").checked;
+    const confirmPrivacy = document.getElementById("setting-confirm-privacy").checked;
+
+    window.pywebview.api.save_settings({
+      provider: provider,
+      groq_api_key: groqKey,
+      groq_model: groqModel,
+      ollama_url: ollamaUrl,
+      ollama_model: ollamaModel,
+      persona_name: personaName,
+      confirm_sensitive_actions: confirmActions,
+      confirm_personal_data_access: confirmPrivacy
+    }).then(() => {
+      settingsModal.classList.remove("active");
+      alert("Settings saved! Jarvis will now use " + (provider === 'groq' ? 'Groq Llama 3.3 70B' : 'Local Ollama') + ".");
+      window.location.reload();
+    });
   });
 }
