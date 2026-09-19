@@ -1,6 +1,7 @@
 # Local Storage & Personal Information (Never push to GitHub)
 memory.json
 chat_sessions.json
+config.json
 *.db
 *.sqlite
 .env
