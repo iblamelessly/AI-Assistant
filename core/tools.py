@@ -353,22 +353,9 @@ class AssistantTools:
 
     @staticmethod
     def open_application(app_name: str) -> dict:
-        """Open a local desktop application or tool."""
-        app_key = app_name.lower().strip()
-        command = APP_COMMANDS.get(app_key)
-
-        try:
-            if command:
-                if command.startswith("start "):
-                    subprocess.Popen(command, shell=True)
-                else:
-                    subprocess.Popen(command)
-                return {"success": True, "action": f"Launched {app_name}", "summary": f"Launched {app_name}."}
-            else:
-                subprocess.Popen(f"start {app_name}", shell=True)
-                return {"success": True, "action": f"Attempted to launch {app_name}", "summary": f"Attempted to launch {app_name}."}
-        except Exception as e:
-            return {"success": False, "error": str(e), "summary": f"Failed to open {app_name}: {e}"}
+        """Open a local desktop application with intelligent fuzzy search and ambiguity detection."""
+        from .app_launcher import app_launcher
+        return app_launcher.resolve_and_launch(app_name)
 
     @staticmethod
     def open_web_search(query: str) -> dict:
