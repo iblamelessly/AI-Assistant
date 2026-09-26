@@ -366,6 +366,21 @@ function appendMessageBubble(role, content, toolInfo = null) {
     `;
   }
 
+  // If Jarvis offers application or multiple-choice suggestions
+  const suggMatch = content.match(/\[Suggestion:\s*(.*?)\]/i);
+  if (role === "assistant" && suggMatch) {
+    const rawOptions = suggMatch[1].split("|").map(s => s.trim()).filter(Boolean);
+    if (rawOptions.length > 0) {
+      let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
+      rawOptions.forEach(opt => {
+        const cleanArg = opt.replace(/'/g, "\\'");
+        suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">🚀 ${escapeHtml(opt)}</button>`;
+      });
+      suggHtml += `</div>`;
+      htmlContent += suggHtml;
+    }
+  }
+
   bubble.innerHTML = htmlContent;
 
   row.appendChild(avatar);
@@ -413,6 +428,20 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
           <button class="btn-confirm-no" onclick="replyConfirmation('No, cancel')">✕ Cancel / No</button>
         </div>
       `;
+    }
+
+    const completeSuggMatch = fullResponse.match(/\[Suggestion:\s*(.*?)\]/i);
+    if (completeSuggMatch) {
+      const rawOptions = completeSuggMatch[1].split("|").map(s => s.trim()).filter(Boolean);
+      if (rawOptions.length > 0) {
+        let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
+        rawOptions.forEach(opt => {
+          const cleanArg = opt.replace(/'/g, "\\'");
+          suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">🚀 ${escapeHtml(opt)}</button>`;
+        });
+        suggHtml += `</div>`;
+        finalHtml += suggHtml;
+      }
     }
 
     currentAssistantBubble.innerHTML = finalHtml;

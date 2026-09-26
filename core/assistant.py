@@ -7,6 +7,7 @@ from .voice import VoiceEngine
 from .config import ConfigManager
 from .groq_client import GroqClient, AVAILABLE_GROQ_MODELS
 from .permissions import PermissionGuard
+from .app_launcher import app_launcher
 
 class AssistantEngine:
     """
@@ -94,7 +95,9 @@ class AssistantEngine:
             "ask whether they mean the original, a backup copy, or duplicates before acting.\n"
             "2. Safety First: Never execute destructive file deletions or kill critical system tasks without explicitly "
             "asking confirmation: 'Proceed? [Yes / No]'.\n"
-            "3. Respectful & Confident: Address the user intelligently, concisely, and respectfully.\n\n"
+            "3. Respectful & Confident: Address the user intelligently, concisely, and respectfully.\n"
+            "4. Smart App Launching: When the user asks to open an application, think carefully about what they meant. "
+            "If an app has multiple editions or is ambiguous, ask them for clarification with suggestions.\n\n"
             "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
             "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
             "- Run terminal/PowerShell: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
@@ -103,7 +106,7 @@ class AssistantEngine:
             "- List directory: [ACTION: list_directory(\"path\")]\n"
             "- Adjust volume: [ACTION: set_volume(\"up\" | \"down\" | \"mute\" | \"set to 50\")]\n"
             "- Screenshot: [ACTION: take_screenshot()]\n"
-            "- Open app: [ACTION: open_app(\"notepad\" | \"chrome\" | \"vscode\" | \"calc\")]\n"
+            "- Open app: [ACTION: open_app(\"app_name\")]\n"
             "- Terminate app: [ACTION: kill_process(\"process_name\")]\n"
             "- Web search: [ACTION: web_search(\"query\")]\n"
         )
@@ -139,13 +142,20 @@ class AssistantEngine:
             res = AssistantTools.get_system_stats()
             return {"tool": "get_system_stats", "result": res}
 
-        # Open apps
-        open_match = re.search(r"^(?:please\s+)?(?:open|launch|start)\s+([a-zA-Z0-9\s]+)$", msg)
+        # Open apps (intelligent case-insensitive search and doubt detection)
+        open_match = re.search(r"^(?:please\s+)?(?:open|launch|start|run)\s+([a-zA-Z0-9\s._-]+)$", msg)
         if open_match:
             app_target = open_match.group(1).strip()
-            if app_target not in ["the door", "up", "a discussion", "settings"]:
-                res = AssistantTools.open_application(app_target)
-                return {"tool": "open_app", "param": app_target, "result": res}
+            ignored_words = ["the door", "up", "a discussion", "a topic", "eyes", "mouth", "mind", "settings"]
+            if app_target not in ignored_words and len(app_target) > 1:
+                res = app_launcher.resolve_and_launch(app_target)
+                if res.get("doubt"):
+                    return {"doubt": True, "matches": res["matches"], "query": res["query"]}
+                elif res.get("web_suggestion"):
+                    return {"web_suggestion": True, "name": res["name"], "url": res["url"]}
+                elif res.get("success"):
+                    matched_name = res.get("matched_app") or res.get("app") or app_target
+                    return {"tool": "open_app", "param": matched_name, "result": res}
 
         return None
 
@@ -206,7 +216,52 @@ class AssistantEngine:
             on_complete(ambiguity_q, None, audio_b64)
             return
 
-        # 3. Trigger background memory extraction
+        # 3. Check if user is replying to a pending app selection or web suggestion
+        if app_launcher.pending_app_selection:
+            chosen_app = app_launcher.evaluate_selection_reply(user_message)
+            if chosen_app == "CANCEL":
+                cancel_msg = "App launch cancelled, sir."
+                on_chunk(cancel_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", cancel_msg)
+                on_complete(cancel_msg, None, audio_b64)
+                return
+            elif chosen_app:
+                launch_res = app_launcher.resolve_and_launch(chosen_app)
+                tool_info = {
+                    "tool": "open_app",
+                    "param": chosen_app,
+                    "result": launch_res
+                }
+                if on_tool:
+                    on_tool(tool_info)
+                resp_msg = f"🚀 Opened **{chosen_app}** for you, sir."
+                on_chunk(resp_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen_app} for you, sir.") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=tool_info)
+                on_complete(resp_msg, tool_info, audio_b64)
+                return
+
+        if app_launcher.pending_web_suggestion:
+            web_res = app_launcher.evaluate_web_reply(user_message)
+            if web_res == "CANCEL":
+                cancel_msg = "Understood, cancelled opening web browser."
+                on_chunk(cancel_msg)
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", cancel_msg)
+                on_complete(cancel_msg, None, None)
+                return
+            elif web_res:
+                on_chunk(web_res)
+                audio_b64 = self.voice_engine.generate_speech_base64(web_res) if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", web_res)
+                on_complete(web_res, None, audio_b64)
+                return
+
+        # 4. Trigger background memory extraction
         model_name = self.groq_client.model if self.provider == "groq" else self.ollama_model
         self.memory_mgr.trigger_background_extraction(
             user_message=user_message,
@@ -214,16 +269,45 @@ class AssistantEngine:
             model=self.ollama_model
         )
 
-        # 4. Check for fast-path direct tool execution
+        # 5. Check for fast-path direct tool execution
         fast_action = self._detect_fast_intent(user_message)
         tool_action_performed = None
 
         if fast_action:
-            tool_action_performed = fast_action
-            if on_tool:
-                on_tool(fast_action)
+            if fast_action.get("doubt"):
+                matches = fast_action.get("matches", [])
+                options_text = "\n".join([f"{i+1}. **{name}**" for i, name in enumerate(matches)])
+                sugg_chips = " | ".join(matches)
+                doubt_msg = (
+                    f"I found multiple applications matching **'{fast_action['query']}'**. Which one would you like me to open?\n\n"
+                    f"{options_text}\n\n"
+                    f"[Suggestion: {sugg_chips}]"
+                )
+                on_chunk(doubt_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {fast_action['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64)
+                return
+            elif fast_action.get("web_suggestion"):
+                name = fast_action.get("name")
+                ask_msg = (
+                    f"I couldn't find **'{name}'** installed locally on your laptop. "
+                    f"Would you like me to open it in your web browser?\n\n"
+                    f"[Suggestion: Open {name} in Browser | Cancel]"
+                )
+                on_chunk(ask_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", ask_msg)
+                on_complete(ask_msg, None, audio_b64)
+                return
+            else:
+                tool_action_performed = fast_action
+                if on_tool:
+                    on_tool(fast_action)
 
-        # 5. Build conversation history
+        # 6. Build conversation history
         session = self.history_mgr.get_session(session_id)
         conversation_messages = [
             {"role": "system", "content": self.build_system_prompt()}
@@ -307,6 +391,35 @@ class AssistantEngine:
 
             # Execute permitted action
             t_result = AssistantTools.execute_tool(t_name, *args)
+            if t_result.get("doubt"):
+                matches = t_result.get("matches", [])
+                options_text = "\n".join([f"{i+1}. **{name}**" for i, name in enumerate(matches)])
+                sugg_chips = " | ".join(matches)
+                doubt_msg = (
+                    f"I found multiple applications matching **'{t_result['query']}'**. Which one would you like me to open?\n\n"
+                    f"{options_text}\n\n"
+                    f"[Suggestion: {sugg_chips}]"
+                )
+                on_chunk(doubt_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {t_result['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64)
+                return
+            elif t_result.get("web_suggestion"):
+                name = t_result.get("name")
+                ask_msg = (
+                    f"I couldn't find **'{name}'** installed locally on your laptop. "
+                    f"Would you like me to open it in your web browser?\n\n"
+                    f"[Suggestion: Open {name} in Browser | Cancel]"
+                )
+                on_chunk(ask_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", ask_msg)
+                on_complete(ask_msg, None, audio_b64)
+                return
+
             tool_action_performed = {
                 "tool": t_name,
                 "param": args[0] if args else "",

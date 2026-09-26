@@ -951,6 +951,36 @@ textarea, input {
   background-color: #4b5563;
 }
 
+/* App suggestions and doubt resolution buttons */
+.app-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-app-suggestion {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--accent-primary);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-app-suggestion:hover {
+  background-color: var(--accent-primary);
+  color: #0d0d0d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
 /* ========================================================
    MODALS
    ======================================================== */
