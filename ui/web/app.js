@@ -106,8 +106,30 @@ function renderToolHtml(toolInfo) {
     return `<div class="tool-badge">🔊 ${escapeHtml(res.summary || res.action || 'Volume updated')}</div>`;
   }
 
+  if (toolName === "open_file") {
+    return `<div class="tool-badge">📄 ${escapeHtml(res.summary || 'Opened file')}</div>`;
+  }
+
+  if (toolName === "open_folder") {
+    return `<div class="tool-badge">📂 ${escapeHtml(res.summary || 'Opened folder')}</div>`;
+  }
+
+  if (toolName === "search_files" || toolName === "search_folders") {
+    return `<div class="tool-badge">🔍 ${escapeHtml(res.summary ? res.summary.split('\n')[0] : 'Search completed')}</div>`;
+  }
+
   const actionDesc = res.summary || res.action || "Action executed";
   return `<div class="tool-badge">⚡ ${escapeHtml(actionDesc)}</div>`;
+}
+
+// Dynamic smart icons for suggestions
+function getSuggestionIcon(text) {
+  const t = text.toLowerCase();
+  if (t === "cancel" || t.includes("cancel")) return "✕";
+  if (t.includes(".py") || t.includes(".txt") || t.includes(".pdf") || t.includes(".json") || t.includes(".doc") || t.includes("file")) return "📄";
+  if (t.includes("folder") || t.includes("/") || t.includes("\\")) return "📁";
+  if (t.includes("browser") || t.includes("web") || t.includes("http")) return "🌐";
+  return "⚡";
 }
 
 // Universal Clipboard Copy with Fallback
@@ -354,7 +376,8 @@ function appendMessageBubble(role, content, toolInfo = null) {
     htmlContent += renderToolHtml(toolInfo);
   }
 
-  htmlContent += parseMarkdown(content);
+  const cleanContent = (role === "assistant") ? content.replace(/\[Suggestion:\s*.*?\]/gi, "").trim() : content;
+  htmlContent += parseMarkdown(cleanContent);
 
   // If Jarvis asks a human confirmation question, add interactive Yes/No buttons
   if (role === "assistant" && (content.includes("[Yes / No]") || content.includes("[Yes/No]") || content.includes("[Overwrite / Cancel]") || content.includes("Proceed?"))) {
@@ -366,7 +389,7 @@ function appendMessageBubble(role, content, toolInfo = null) {
     `;
   }
 
-  // If Jarvis offers application or multiple-choice suggestions
+  // If Jarvis offers application, file, or multiple-choice suggestions
   const suggMatch = content.match(/\[Suggestion:\s*(.*?)\]/i);
   if (role === "assistant" && suggMatch) {
     const rawOptions = suggMatch[1].split("|").map(s => s.trim()).filter(Boolean);
@@ -374,7 +397,8 @@ function appendMessageBubble(role, content, toolInfo = null) {
       let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
       rawOptions.forEach(opt => {
         const cleanArg = opt.replace(/'/g, "\\'");
-        suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">🚀 ${escapeHtml(opt)}</button>`;
+        const icon = getSuggestionIcon(opt);
+        suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">${icon} ${escapeHtml(opt)}</button>`;
       });
       suggHtml += `</div>`;
       htmlContent += suggHtml;
@@ -419,7 +443,8 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
     if (toolInfo) {
       finalHtml += renderToolHtml(toolInfo);
     }
-    finalHtml += parseMarkdown(fullResponse);
+    const cleanFull = fullResponse.replace(/\[Suggestion:\s*.*?\]/gi, "").trim();
+    finalHtml += parseMarkdown(cleanFull);
 
     if (fullResponse.includes("[Yes / No]") || fullResponse.includes("[Yes/No]") || fullResponse.includes("[Overwrite / Cancel]") || fullResponse.includes("Proceed?")) {
       finalHtml += `
@@ -437,7 +462,8 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
         let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
         rawOptions.forEach(opt => {
           const cleanArg = opt.replace(/'/g, "\\'");
-          suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">🚀 ${escapeHtml(opt)}</button>`;
+          const icon = getSuggestionIcon(opt);
+          suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">${icon} ${escapeHtml(opt)}</button>`;
         });
         suggHtml += `</div>`;
         finalHtml += suggHtml;

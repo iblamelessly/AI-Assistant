@@ -405,20 +405,63 @@ class AssistantTools:
 
     @staticmethod
     def open_file(file_path: str) -> dict:
-        """Opens a local file in its default registered application."""
+        """Opens a local file in its default registered application with automatic fuzzy resolution."""
         from .file_search import file_search_engine
-        return file_search_engine.open_file(file_path)
+        p = Path(file_path).expanduser()
+        if p.exists() and p.is_file():
+            return file_search_engine.open_file(str(p))
+
+        # If not a direct file path, search and resolve it
+        res = file_search_engine.resolve_and_handle(f"open {file_path}")
+        if res.get("status") == "found":
+            return res.get("action_result", file_search_engine.open_file(res["match"]["path"]))
+        elif res.get("status") == "doubt":
+            return {
+                "success": False,
+                "doubt": True,
+                "file_doubt": True,
+                "query": res["query"],
+                "type": "file",
+                "matches": res["matches"],
+                "summary": f"Multiple files found matching '{file_path}'."
+            }
+        return {"success": False, "error": f"File not found: {file_path}", "summary": f"Could not find file '{file_path}'."}
 
     @staticmethod
     def open_folder(folder_path: str) -> dict:
-        """Opens a local directory in Windows File Explorer."""
+        """Opens a local directory in Windows File Explorer with automatic fuzzy resolution."""
         from .file_search import file_search_engine
-        return file_search_engine.open_folder(folder_path)
+        p = Path(folder_path).expanduser()
+        if p.exists() and p.is_dir():
+            return file_search_engine.open_folder(str(p))
+
+        # If not a direct folder path, search and resolve it
+        res = file_search_engine.resolve_and_handle(f"folder {folder_path}")
+        if res.get("status") == "found":
+            return res.get("action_result", file_search_engine.open_folder(res["match"]["path"]))
+        elif res.get("status") == "doubt":
+            return {
+                "success": False,
+                "doubt": True,
+                "file_doubt": True,
+                "query": res["query"],
+                "type": "folder",
+                "matches": res["matches"],
+                "summary": f"Multiple folders found matching '{folder_path}'."
+            }
+        return {"success": False, "error": f"Folder not found: {folder_path}", "summary": f"Could not find folder '{folder_path}'."}
 
     @staticmethod
     def reveal_in_explorer(file_path: str) -> dict:
-        """Reveals a file highlighted in Windows File Explorer."""
+        """Reveals a file highlighted in Windows File Explorer with automatic resolution."""
         from .file_search import file_search_engine
+        p = Path(file_path).expanduser()
+        if p.exists():
+            return file_search_engine.reveal_in_explorer(str(p))
+
+        res = file_search_engine.resolve_and_handle(f"reveal {file_path}")
+        if res.get("status") == "found":
+            return res.get("action_result", file_search_engine.reveal_in_explorer(res["match"]["path"]))
         return file_search_engine.reveal_in_explorer(file_path)
 
     @classmethod

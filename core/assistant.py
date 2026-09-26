@@ -8,6 +8,7 @@ from .config import ConfigManager
 from .groq_client import GroqClient, AVAILABLE_GROQ_MODELS
 from .permissions import PermissionGuard
 from .app_launcher import app_launcher
+from .file_search import file_search_engine
 
 class AssistantEngine:
     """
@@ -97,13 +98,20 @@ class AssistantEngine:
             "asking confirmation: 'Proceed? [Yes / No]'.\n"
             "3. Respectful & Confident: Address the user intelligently, concisely, and respectfully.\n"
             "4. Smart App Launching: When the user asks to open an application, think carefully about what they meant. "
-            "If an app has multiple editions or is ambiguous, ask them for clarification with suggestions.\n\n"
+            "If an app has multiple editions or is ambiguous, ask them for clarification with suggestions.\n"
+            "5. File & Folder Disambiguation: If a file or folder search yields multiple matches across different directories, "
+            "do not guess blindly. Present the choices to the user with helpful suggestions.\n\n"
             "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
             "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
             "- Run terminal/PowerShell: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
             "- Read file: [ACTION: read_file(\"path/to/file\")]\n"
             "- Write file: [ACTION: write_file(\"path/to/file\", \"content\")]\n"
             "- List directory: [ACTION: list_directory(\"path\")]\n"
+            "- Search files: [ACTION: search_files(\"query\", \"optional_ext\")]\n"
+            "- Search folders: [ACTION: search_folders(\"folder_name\")]\n"
+            "- Open file: [ACTION: open_file(\"path_to_file\")]\n"
+            "- Open folder: [ACTION: open_folder(\"path_to_folder\")]\n"
+            "- Reveal in Explorer: [ACTION: reveal_in_explorer(\"path_to_file\")]\n"
             "- Adjust volume: [ACTION: set_volume(\"up\" | \"down\" | \"mute\" | \"set to 50\")]\n"
             "- Screenshot: [ACTION: take_screenshot()]\n"
             "- Open app: [ACTION: open_app(\"app_name\")]\n"
@@ -142,7 +150,40 @@ class AssistantEngine:
             res = AssistantTools.get_system_stats()
             return {"tool": "get_system_stats", "result": res}
 
-        # Open apps (intelligent case-insensitive search and doubt detection)
+        # File & Folder Intent Detection (e.g. "find my python file main.py", "open downloads folder", "where is test.py")
+        parsed_q = file_search_engine.parse_query(msg)
+        is_file_folder_query = (
+            parsed_q["is_folder"] or
+            bool(parsed_q["extensions"]) or
+            any(w in msg for w in ["file", "folder", "directory", "script", "document"]) or
+            bool(re.search(r"^(?:find|search\s+for|search|locate|where\s+is)\b", msg))
+        )
+
+        if is_file_folder_query and (parsed_q["target"] or parsed_q["extensions"] or parsed_q["is_folder"]):
+            fs_res = file_search_engine.resolve_and_handle(user_message)
+            if fs_res.get("status") == "doubt":
+                return {
+                    "file_doubt": True,
+                    "query": fs_res["query"],
+                    "type": fs_res["type"],
+                    "matches": fs_res["matches"]
+                }
+            elif fs_res.get("status") == "found":
+                tool_name = "open_folder" if fs_res["type"] == "folder" else "open_file"
+                match_info = fs_res["match"]
+                return {
+                    "tool": tool_name,
+                    "param": match_info["path"],
+                    "result": fs_res.get("action_result") or {"success": True, "summary": fs_res.get("summary")}
+                }
+            elif fs_res.get("status") == "not_found" and not re.search(r"^(?:open|launch|start|run)\b", msg):
+                return {
+                    "tool": "search_files",
+                    "param": parsed_q["target"],
+                    "result": {"success": False, "summary": fs_res.get("summary")}
+                }
+
+        # Open apps (intelligent case-insensitive search and doubt detection, with fallback to file/folder)
         open_match = re.search(r"^(?:please\s+)?(?:open|launch|start|run)\s+([a-zA-Z0-9\s._-]+)$", msg)
         if open_match:
             app_target = open_match.group(1).strip()
@@ -156,6 +197,24 @@ class AssistantEngine:
                 elif res.get("success"):
                     matched_name = res.get("matched_app") or res.get("app") or app_target
                     return {"tool": "open_app", "param": matched_name, "result": res}
+                else:
+                    # App not found locally -> check if it's a file or folder!
+                    fs_res = file_search_engine.resolve_and_handle(app_target)
+                    if fs_res.get("status") == "doubt":
+                        return {
+                            "file_doubt": True,
+                            "query": fs_res["query"],
+                            "type": fs_res["type"],
+                            "matches": fs_res["matches"]
+                        }
+                    elif fs_res.get("status") == "found":
+                        tool_name = "open_folder" if fs_res["type"] == "folder" else "open_file"
+                        match_info = fs_res["match"]
+                        return {
+                            "tool": tool_name,
+                            "param": match_info["path"],
+                            "result": fs_res.get("action_result") or {"success": True, "summary": fs_res.get("summary")}
+                        }
 
         return None
 
@@ -216,7 +275,39 @@ class AssistantEngine:
             on_complete(ambiguity_q, None, audio_b64)
             return
 
-        # 3. Check if user is replying to a pending app selection or web suggestion
+        # 3. Check if user is replying to a pending file or folder selection
+        if file_search_engine.pending_file_selection:
+            eval_res = file_search_engine.evaluate_selection_reply(user_message)
+            if eval_res:
+                if eval_res.get("status") == "cancel":
+                    cancel_msg = "File/folder operation cancelled, sir."
+                    on_chunk(cancel_msg)
+                    audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
+                    self.history_mgr.add_message(session_id, "user", user_message)
+                    self.history_mgr.add_message(session_id, "assistant", cancel_msg)
+                    on_complete(cancel_msg, None, audio_b64)
+                    return
+                elif eval_res.get("status") == "selected":
+                    chosen = eval_res["match"]
+                    act_res = eval_res.get("action_result", {})
+                    summary = act_res.get("summary", f"Opened **{chosen['name']}**.")
+                    resp_msg = f"📂 {summary}"
+                    tool_name = "open_folder" if chosen.get("parent") and (not chosen.get("size_kb") or "size_kb" not in chosen) else "open_file"
+                    tool_info = {
+                        "tool": tool_name,
+                        "param": chosen["path"],
+                        "result": act_res
+                    }
+                    if on_tool:
+                        on_tool(tool_info)
+                    on_chunk(resp_msg)
+                    audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen['name']} for you, sir.") if self.voice_engine.is_enabled() else None
+                    self.history_mgr.add_message(session_id, "user", user_message)
+                    self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=tool_info)
+                    on_complete(resp_msg, tool_info, audio_b64)
+                    return
+
+        # 4. Check if user is replying to a pending app selection or web suggestion
         if app_launcher.pending_app_selection:
             chosen_app = app_launcher.evaluate_selection_reply(user_message)
             if chosen_app == "CANCEL":
@@ -274,7 +365,33 @@ class AssistantEngine:
         tool_action_performed = None
 
         if fast_action:
-            if fast_action.get("doubt"):
+            if fast_action.get("file_doubt"):
+                matches = fast_action.get("matches", [])
+                target_type = fast_action.get("type", "file")
+                lines = []
+                chip_options = []
+                for i, m in enumerate(matches[:5]):
+                    loc = m.get("parent") or m.get("display")
+                    size_info = f" ({m['size_kb']} KB)" if "size_kb" in m else ""
+                    lines.append(f"{i+1}. **{m['name']}** in `{m['path']}`{size_info}")
+                    chip_options.append(f"{i+1}. {loc}/{m['name']}" if target_type == "file" else f"{i+1}. {m['name']}")
+
+                chip_options.append("Cancel")
+                options_text = "\n".join(lines)
+                sugg_chips = " | ".join(chip_options)
+
+                doubt_msg = (
+                    f"I found multiple {target_type}s matching **'{fast_action['query']}'**. Which one would you like me to open?\n\n"
+                    f"{options_text}\n\n"
+                    f"[Suggestion: {sugg_chips}]"
+                )
+                on_chunk(doubt_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching {fast_action['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64)
+                return
+            elif fast_action.get("doubt"):
                 matches = fast_action.get("matches", [])
                 options_text = "\n".join([f"{i+1}. **{name}**" for i, name in enumerate(matches)])
                 sugg_chips = " | ".join(matches)
@@ -391,7 +508,33 @@ class AssistantEngine:
 
             # Execute permitted action
             t_result = AssistantTools.execute_tool(t_name, *args)
-            if t_result.get("doubt"):
+            if t_result.get("file_doubt"):
+                matches = t_result.get("matches", [])
+                target_type = t_result.get("type", "file")
+                lines = []
+                chip_options = []
+                for i, m in enumerate(matches[:5]):
+                    loc = m.get("parent") or m.get("display")
+                    size_info = f" ({m['size_kb']} KB)" if "size_kb" in m else ""
+                    lines.append(f"{i+1}. **{m['name']}** in `{m['path']}`{size_info}")
+                    chip_options.append(f"{i+1}. {loc}/{m['name']}" if target_type == "file" else f"{i+1}. {m['name']}")
+
+                chip_options.append("Cancel")
+                options_text = "\n".join(lines)
+                sugg_chips = " | ".join(chip_options)
+
+                doubt_msg = (
+                    f"I found multiple {target_type}s matching **'{t_result.get('query', 'target')}'**. Which one would you like me to open?\n\n"
+                    f"{options_text}\n\n"
+                    f"[Suggestion: {sugg_chips}]"
+                )
+                on_chunk(doubt_msg)
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64)
+                return
+            elif t_result.get("doubt"):
                 matches = t_result.get("matches", [])
                 options_text = "\n".join([f"{i+1}. **{name}**" for i, name in enumerate(matches)])
                 sugg_chips = " | ".join(matches)
