@@ -378,6 +378,49 @@ class AssistantTools:
         except Exception as e:
             return {"success": False, "error": str(e), "summary": f"Failed to open URL: {e}"}
 
+    @staticmethod
+    def search_files(query: str, extension: str = None) -> dict:
+        """Searches for files on the laptop matching a query or extension."""
+        from .file_search import file_search_engine
+        exts = [extension] if extension else None
+        matches = file_search_engine.search_files(query, extensions=exts)
+        if not matches:
+            return {"success": False, "query": query, "matches": [], "summary": f"No files found matching '{query}'."}
+
+        lines = [f"- {m['name']} (in {m['parent']}, {m['size_kb']} KB) -> `{m['path']}`" for m in matches]
+        summary = f"Found {len(matches)} files matching '{query}':\n" + "\n".join(lines)
+        return {"success": True, "query": query, "count": len(matches), "matches": matches, "summary": summary}
+
+    @staticmethod
+    def search_folders(query: str) -> dict:
+        """Searches for folders on the laptop matching a query."""
+        from .file_search import file_search_engine
+        matches = file_search_engine.search_folders(query)
+        if not matches:
+            return {"success": False, "query": query, "matches": [], "summary": f"No folders found matching '{query}'."}
+
+        lines = [f"- {m['name']} (in {m['parent']}) -> `{m['path']}`" for m in matches]
+        summary = f"Found {len(matches)} folders matching '{query}':\n" + "\n".join(lines)
+        return {"success": True, "query": query, "count": len(matches), "matches": matches, "summary": summary}
+
+    @staticmethod
+    def open_file(file_path: str) -> dict:
+        """Opens a local file in its default registered application."""
+        from .file_search import file_search_engine
+        return file_search_engine.open_file(file_path)
+
+    @staticmethod
+    def open_folder(folder_path: str) -> dict:
+        """Opens a local directory in Windows File Explorer."""
+        from .file_search import file_search_engine
+        return file_search_engine.open_folder(folder_path)
+
+    @staticmethod
+    def reveal_in_explorer(file_path: str) -> dict:
+        """Reveals a file highlighted in Windows File Explorer."""
+        from .file_search import file_search_engine
+        return file_search_engine.reveal_in_explorer(file_path)
+
     @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:
         """Unified dispatcher for tool execution."""
@@ -396,6 +439,16 @@ class AssistantTools:
             return cls.modify_file(arg0, arg1, arg2)
         elif t in ["list_directory", "list_dir", "ls", "dir"]:
             return cls.list_directory(arg0 or ".")
+        elif t in ["search_files", "search_file", "find_file", "find_files"]:
+            return cls.search_files(arg0, arg1 or None)
+        elif t in ["search_folders", "search_folder", "find_folder"]:
+            return cls.search_folders(arg0)
+        elif t in ["open_file", "launch_file"]:
+            return cls.open_file(arg0)
+        elif t in ["open_folder", "launch_folder"]:
+            return cls.open_folder(arg0)
+        elif t in ["reveal_in_explorer", "reveal_file", "locate_file", "show_in_folder"]:
+            return cls.reveal_in_explorer(arg0)
         elif t in ["set_volume", "volume"]:
             return cls.set_volume(arg0)
         elif t in ["take_screenshot", "screenshot"]:
