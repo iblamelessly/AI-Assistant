@@ -9,6 +9,176 @@ let voiceEnabled = true;
 let recognition = null;
 let isRecording = false;
 
+let pendingAttachments = [];
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function renderAttachmentPreviews() {
+  const container = document.getElementById("attachment-preview-container");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (pendingAttachments.length === 0) {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "flex";
+
+  pendingAttachments.forEach((att, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "attachment-chip";
+
+    const icon = att.type === "image" ? "🖼️" : (att.type === "video" ? "🎬" : "📄");
+
+    chip.innerHTML = `
+      <div class="attachment-thumb" id="att-thumb-${idx}">${icon}</div>
+      <div class="attachment-info">
+        <span class="attachment-name" title="${escapeHtml(att.name)}">${escapeHtml(att.name)}</span>
+        <span class="attachment-size">${formatFileSize(att.size)}</span>
+      </div>
+      <button class="btn-remove-attachment" title="Remove attachment" onclick="removeAttachment(${idx})">&times;</button>
+    `;
+
+    container.appendChild(chip);
+
+    if (att.dataUrl && att.type === "image") {
+      const thumb = chip.querySelector(`#att-thumb-${idx}`);
+      if (thumb) thumb.innerHTML = `<img src="${att.dataUrl}" style="width:100%; height:100%; object-fit:cover; border-radius:4px;" />`;
+    } else if (att.path && att.type === "image" && window.pywebview && window.pywebview.api) {
+      window.pywebview.api.get_media_data_url(att.path).then((dataUrl) => {
+        if (dataUrl) {
+          const thumb = chip.querySelector(`#att-thumb-${idx}`);
+          if (thumb) thumb.innerHTML = `<img src="${dataUrl}" style="width:100%; height:100%; object-fit:cover; border-radius:4px;" />`;
+        }
+      });
+    }
+  });
+}
+
+window.removeAttachment = function(idx) {
+  pendingAttachments.splice(idx, 1);
+  renderAttachmentPreviews();
+};
+
+function renderMediaTags(htmlText) {
+  if (!htmlText) return "";
+  const mediaRegex = /\[MEDIA:\s*(image|video|audio)\s*\|\s*([^\]]+)\]/gi;
+  return htmlText.replace(mediaRegex, function(match, type, filePath) {
+    const cleanPath = filePath.trim();
+    const fileName = cleanPath.split(/[\\/]/).pop();
+    const cleanArg = cleanPath.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    const typeLower = type.toLowerCase();
+    const typeLabel = typeLower === 'image' ? '🖼️ Photo' : (typeLower === 'video' ? '🎬 Video' : '🎵 Audio');
+
+    let mediaElem = "";
+    if (typeLower === "image") {
+      mediaElem = `<img class="chat-media-img" data-media-src="${cleanArg}" alt="${escapeHtml(fileName)}" onclick="openMediaLightbox('${cleanArg}', 'image')" />`;
+    } else if (typeLower === "video") {
+      mediaElem = `<video class="chat-media-vid" data-media-src="${cleanArg}" controls preload="metadata"></video>`;
+    } else if (typeLower === "audio") {
+      mediaElem = `<audio class="chat-media-aud" data-media-src="${cleanArg}" controls></audio>`;
+    }
+
+    return `
+      <div class="chat-media-card">
+        <div class="chat-media-header">
+          <span class="chat-media-badge">${typeLabel}</span>
+          <span class="chat-media-filename" title="${escapeHtml(cleanPath)}">${escapeHtml(fileName)}</span>
+          <button class="chat-media-btn-reveal" onclick="revealMediaFile('${cleanArg}')" title="Show in File Explorer">📂 Open Folder</button>
+        </div>
+        <div class="chat-media-content">
+          ${mediaElem}
+        </div>
+      </div>
+    `;
+  });
+}
+
+function loadAsyncMediaElements(container) {
+  if (!container || !window.pywebview || !window.pywebview.api) return;
+  const elements = container.querySelectorAll("[data-media-src]:not([data-media-loaded])");
+  elements.forEach((el) => {
+    const rawPath = el.getAttribute("data-media-src");
+    if (!rawPath) return;
+    el.setAttribute("data-media-loaded", "pending");
+
+    window.pywebview.api.get_media_data_url(rawPath).then((dataUrl) => {
+      if (dataUrl) {
+        el.src = dataUrl;
+        el.setAttribute("data-media-loaded", "true");
+      }
+    }).catch(err => {
+      console.warn("Could not load media:", rawPath, err);
+    });
+  });
+}
+
+function renderUserAttachments(attachments) {
+  if (!attachments || attachments.length === 0) return "";
+  let html = `<div class="user-attachment-gallery">`;
+  attachments.forEach((att) => {
+    const cleanPath = (att.path || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    if (att.type === "image") {
+      html += `<img class="user-attachment-thumb" data-media-src="${cleanPath}" title="${escapeHtml(att.name)}" onclick="openMediaLightbox('${cleanPath}', 'image')" />`;
+    } else if (att.type === "video") {
+      html += `<video class="user-attachment-thumb" data-media-src="${cleanPath}" title="${escapeHtml(att.name)}" onclick="openMediaLightbox('${cleanPath}', 'video')"></video>`;
+    } else {
+      html += `<span class="attachment-chip" title="${escapeHtml(att.path)}">📄 ${escapeHtml(att.name)}</span>`;
+    }
+  });
+  html += `</div>`;
+  return html;
+}
+
+window.openMediaLightbox = function(filePath, mediaType) {
+  const modal = document.getElementById("lightbox-modal");
+  if (!modal) return;
+  const titleEl = document.getElementById("lightbox-filename");
+  const pathEl = document.getElementById("lightbox-filepath");
+  const iconEl = document.getElementById("lightbox-type-icon");
+  const bodyEl = document.getElementById("lightbox-body");
+  const btnReveal = document.getElementById("btn-lightbox-reveal");
+
+  const fileName = filePath.split(/[\\/]/).pop();
+  if (titleEl) titleEl.textContent = fileName;
+  if (pathEl) pathEl.textContent = filePath;
+  if (iconEl) iconEl.textContent = mediaType === "video" ? "🎬" : "🖼️";
+  if (bodyEl) bodyEl.innerHTML = `<span style="color:var(--text-muted); font-size:12px;">Loading media preview...</span>`;
+
+  if (btnReveal) btnReveal.onclick = () => revealMediaFile(filePath);
+
+  modal.classList.add("active");
+
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.get_media_data_url(filePath).then((dataUrl) => {
+      if (!dataUrl) {
+        bodyEl.innerHTML = `<p style="color:var(--danger)">Failed to load media preview for ${escapeHtml(fileName)}</p>`;
+        return;
+      }
+      if (mediaType === "video") {
+        bodyEl.innerHTML = `<video controls autoplay style="max-width:82vw; max-height:72vh; border-radius:8px;"><source src="${dataUrl}" type="video/mp4"></video>`;
+      } else {
+        bodyEl.innerHTML = `<img src="${dataUrl}" alt="${escapeHtml(fileName)}" style="max-width:82vw; max-height:72vh; border-radius:8px; object-fit:contain;" />`;
+      }
+    }).catch(err => {
+      bodyEl.innerHTML = `<p style="color:var(--danger)">Error: ${err}</p>`;
+    });
+  }
+};
+
+window.revealMediaFile = function(filePath) {
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.reveal_in_explorer(filePath);
+  }
+};
+
 // Simple, robust offline markdown parser
 function parseMarkdown(text) {
   if (!text) return "";
@@ -116,6 +286,22 @@ function renderToolHtml(toolInfo) {
 
   if (toolName === "search_files" || toolName === "search_folders") {
     return `<div class="tool-badge">🔍 ${escapeHtml(res.summary ? res.summary.split('\n')[0] : 'Search completed')}</div>`;
+  }
+
+  if (toolName === "edit_image" || toolName === "image_edit" || toolName === "resize_image" || toolName === "crop_image" || toolName === "filter_image") {
+    const isSuccess = res.success !== false;
+    const actionDesc = res.summary || (isSuccess ? "Image edited successfully" : ("Error: " + (res.error || "Failed")));
+    return `<div class="tool-badge">🖼️ ${escapeHtml(actionDesc)}</div>`;
+  }
+
+  if (toolName === "edit_video" || toolName === "video_edit" || toolName === "trim_video" || toolName === "extract_audio" || toolName === "mute_video") {
+    const isSuccess = res.success !== false;
+    const actionDesc = res.summary || (isSuccess ? "Video edited successfully" : ("Error: " + (res.error || "Failed")));
+    return `<div class="tool-badge">🎬 ${escapeHtml(actionDesc)}</div>`;
+  }
+
+  if (toolName === "inspect_media") {
+    return `<div class="tool-badge">📊 ${escapeHtml(res.summary || 'Media inspected')}</div>`;
   }
 
   const actionDesc = res.summary || res.action || "Action executed";
@@ -349,14 +535,14 @@ function renderMessages(messages) {
   welcomeCard.style.display = "none";
 
   messages.forEach((msg) => {
-    appendMessageBubble(msg.role, msg.content, msg.tool_info);
+    appendMessageBubble(msg.role, msg.content, msg.tool_info, msg.attachments);
   });
 
   scrollToBottom();
 }
 
 // Append Message Bubble
-function appendMessageBubble(role, content, toolInfo = null) {
+function appendMessageBubble(role, content, toolInfo = null, attachments = null) {
   const container = document.getElementById("messages-container");
   const welcomeCard = document.getElementById("welcome-card");
   if (welcomeCard) welcomeCard.style.display = "none";
@@ -376,8 +562,12 @@ function appendMessageBubble(role, content, toolInfo = null) {
     htmlContent += renderToolHtml(toolInfo);
   }
 
+  if (role === "user" && attachments && attachments.length > 0) {
+    htmlContent += renderUserAttachments(attachments);
+  }
+
   const cleanContent = (role === "assistant") ? content.replace(/\[Suggestion:\s*.*?\]/gi, "").trim() : content;
-  htmlContent += parseMarkdown(cleanContent);
+  htmlContent += renderMediaTags(parseMarkdown(cleanContent));
 
   // If Jarvis asks a human confirmation question, add interactive Yes/No buttons
   if (role === "assistant" && (content.includes("[Yes / No]") || content.includes("[Yes/No]") || content.includes("[Overwrite / Cancel]") || content.includes("Proceed?"))) {
@@ -411,6 +601,8 @@ function appendMessageBubble(role, content, toolInfo = null) {
   row.appendChild(bubble);
   container.appendChild(row);
 
+  loadAsyncMediaElements(bubble);
+
   scrollToBottom();
   return bubble;
 }
@@ -428,7 +620,8 @@ window.onToolExecuted = function(toolInfo) {
 window.onStreamChunk = function(chunk) {
   currentStreamBuffer += chunk;
   if (currentAssistantBubble) {
-    currentAssistantBubble.innerHTML = parseMarkdown(currentStreamBuffer) + '<span class="typing-cursor"></span>';
+    currentAssistantBubble.innerHTML = renderMediaTags(parseMarkdown(currentStreamBuffer)) + '<span class="typing-cursor"></span>';
+    loadAsyncMediaElements(currentAssistantBubble);
     scrollToBottom();
   }
 };
@@ -444,7 +637,7 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
       finalHtml += renderToolHtml(toolInfo);
     }
     const cleanFull = fullResponse.replace(/\[Suggestion:\s*.*?\]/gi, "").trim();
-    finalHtml += parseMarkdown(cleanFull);
+    finalHtml += renderMediaTags(parseMarkdown(cleanFull));
 
     if (fullResponse.includes("[Yes / No]") || fullResponse.includes("[Yes/No]") || fullResponse.includes("[Overwrite / Cancel]") || fullResponse.includes("Proceed?")) {
       finalHtml += `
@@ -471,6 +664,7 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
     }
 
     currentAssistantBubble.innerHTML = finalHtml;
+    loadAsyncMediaElements(currentAssistantBubble);
   }
 
   // Play Neural Audio Speech if enabled
@@ -504,15 +698,21 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
 function sendMessage() {
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
-  if (!text || isStreaming) return;
+  const hasAttachments = pendingAttachments.length > 0;
+  if ((!text && !hasAttachments) || isStreaming) return;
 
+  const userText = text || (hasAttachments ? (pendingAttachments[0].type === "image" ? "Please inspect and display this image." : "Please inspect and display this video.") : "");
   input.value = "";
   input.style.height = "auto";
   isStreaming = true;
   document.getElementById("btn-send").disabled = true;
 
+  const attachmentsToSend = [...pendingAttachments];
+  pendingAttachments = [];
+  renderAttachmentPreviews();
+
   // Append user bubble
-  appendMessageBubble("user", text);
+  appendMessageBubble("user", userText, null, attachmentsToSend);
 
   // Create empty assistant bubble with cursor
   const container = document.getElementById("messages-container");
@@ -536,7 +736,7 @@ function sendMessage() {
   scrollToBottom();
 
   // Call Python API
-  window.pywebview.api.send_message(text, currentSessionId).catch((err) => {
+  window.pywebview.api.send_message(userText, currentSessionId, attachmentsToSend).catch((err) => {
     console.error("Send message error:", err);
     bubble.innerHTML = `<p style="color:var(--danger)">Error: ${err}</p>`;
     isStreaming = false;
@@ -847,4 +1047,139 @@ window.replyConfirmation = function(choice) {
       window.location.reload();
     });
   });
+
+  // Media Attachment button & file picker
+  const btnAttach = document.getElementById("btn-attach");
+  const mediaInput = document.getElementById("media-file-input");
+
+  if (btnAttach) {
+    btnAttach.addEventListener("click", () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.select_media_files) {
+        window.pywebview.api.select_media_files().then((files) => {
+          if (files && files.length > 0) {
+            files.forEach(f => {
+              if (!pendingAttachments.some(a => a.path === f.path)) {
+                pendingAttachments.push(f);
+              }
+            });
+            renderAttachmentPreviews();
+          }
+        }).catch(err => {
+          console.warn("Native file dialog error:", err);
+          if (mediaInput) mediaInput.click();
+        });
+      } else if (mediaInput) {
+        mediaInput.click();
+      }
+    });
+  }
+
+  if (mediaInput) {
+    mediaInput.addEventListener("change", function(e) {
+      const files = Array.from(e.target.files || []);
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const b64Data = evt.target.result;
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.upload_media_file) {
+            window.pywebview.api.upload_media_file(file.name, b64Data).then(res => {
+              if (res && res.success) {
+                res.dataUrl = b64Data;
+                pendingAttachments.push(res);
+                renderAttachmentPreviews();
+              }
+            });
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      mediaInput.value = "";
+    });
+  }
+
+  // Drag and Drop media files onto chat
+  const chatMain = document.querySelector(".chat-main");
+  if (chatMain) {
+    ["dragenter", "dragover"].forEach(eventName => {
+      chatMain.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, false);
+    });
+
+    ["dragleave", "drop"].forEach(eventName => {
+      chatMain.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, false);
+    });
+
+    chatMain.addEventListener("drop", (e) => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const files = Array.from(dt.files || []);
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const b64Data = evt.target.result;
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.upload_media_file) {
+            window.pywebview.api.upload_media_file(file.name, b64Data).then(res => {
+              if (res && res.success) {
+                res.dataUrl = b64Data;
+                pendingAttachments.push(res);
+                renderAttachmentPreviews();
+              }
+            });
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+  }
+
+  // Clipboard Paste (Ctrl+V) for images
+  document.addEventListener("paste", (e) => {
+    const items = (e.clipboardData || window.clipboardData)?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const blob = item.getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = function(evt) {
+            const b64Data = evt.target.result;
+            const ext = blob.type.split("/")[1] || "png";
+            const fileName = "pasted_" + Date.now() + "." + ext;
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.upload_media_file) {
+              window.pywebview.api.upload_media_file(fileName, b64Data).then(res => {
+                if (res && res.success) {
+                  res.dataUrl = b64Data;
+                  pendingAttachments.push(res);
+                  renderAttachmentPreviews();
+                }
+              });
+            }
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    }
+  });
+
+  // Lightbox Modal Close
+  const lightboxModal = document.getElementById("lightbox-modal");
+  const btnCloseLightbox = document.getElementById("btn-close-lightbox");
+  if (btnCloseLightbox) {
+    btnCloseLightbox.addEventListener("click", () => {
+      if (lightboxModal) lightboxModal.classList.remove("active");
+    });
+  }
+  if (lightboxModal) {
+    lightboxModal.addEventListener("click", (e) => {
+      if (e.target === lightboxModal) {
+        lightboxModal.classList.remove("active");
+      }
+    });
+  }
 }

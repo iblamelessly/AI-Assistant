@@ -1,6 +1,10 @@
 import os
 import json
+import base64
+import mimetypes
+import time
 import threading
+from pathlib import Path
 import webview
 
 from core.memory import MemoryManager
@@ -51,7 +55,7 @@ class AssistantApi:
             "config": self.config_mgr.get_all()
         }
 
-    def send_message(self, user_message, session_id):
+    def send_message(self, user_message, session_id, attachments=None):
         """Asynchronously streams response tokens to the UI via evaluate_js."""
         def run_stream():
             def on_chunk(token):
@@ -74,7 +78,8 @@ class AssistantApi:
                 user_message=user_message,
                 on_chunk=on_chunk,
                 on_complete=on_complete,
-                on_tool=on_tool
+                on_tool=on_tool,
+                attachments=attachments
             )
 
         thread = threading.Thread(target=run_stream, daemon=True)
@@ -182,6 +187,121 @@ class AssistantApi:
             text = self.mic_engine.transcribe(wav_bytes, groq_api_key=groq_key)
             return {"status": "success", "text": text}
         return {"status": "error", "text": ""}
+
+    def select_media_files(self):
+        """Opens native Windows file dialog for selecting photos or videos."""
+        if not self._window:
+            return []
+        file_types = (
+            "Media Files (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.mp4;*.mov;*.avi;*.mkv;*.webm;*.mp3;*.wav)",
+            "Image Files (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp)",
+            "Video Files (*.mp4;*.mov;*.avi;*.mkv;*.webm)",
+            "All Files (*.*)"
+        )
+        try:
+            res = self._window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=True,
+                file_types=file_types
+            )
+            if not res:
+                return []
+
+            selected = []
+            for path_str in res:
+                p = Path(path_str)
+                if p.exists():
+                    ext = p.suffix.lower()
+                    mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"] else (
+                        "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
+                            "audio" if ext in [".mp3", ".wav", ".m4a"] else "file"
+                        )
+                    )
+                    selected.append({
+                        "name": p.name,
+                        "path": str(p.resolve()),
+                        "size": p.stat().st_size,
+                        "type": mtype
+                    })
+            return selected
+        except Exception as e:
+            print(f"[AssistantApi] select_media_files error: {e}")
+            return []
+
+    def upload_media_file(self, filename, base64_data):
+        """Saves pasted or dropped base64 media file into media/uploads."""
+        try:
+            upload_dir = Path(__file__).resolve().parent.parent / "media" / "uploads"
+            upload_dir.mkdir(parents=True, exist_ok=True)
+
+            if "," in base64_data:
+                _, base64_data = base64_data.split(",", 1)
+
+            raw_bytes = base64.b64decode(base64_data)
+
+            orig_name = Path(filename).name if filename else "upload"
+            stem = Path(orig_name).stem
+            suffix = Path(orig_name).suffix.lower()
+            if not suffix:
+                suffix = ".png"
+
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            target_path = upload_dir / f"{stem}_{timestamp}{suffix}"
+            target_path.write_bytes(raw_bytes)
+
+            ext = suffix.lower()
+            mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"] else (
+                "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
+                    "audio" if ext in [".mp3", ".wav", ".m4a"] else "file"
+                )
+            )
+
+            return {
+                "success": True,
+                "name": target_path.name,
+                "path": str(target_path.resolve()),
+                "size": len(raw_bytes),
+                "type": mtype
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_media_data_url(self, file_path):
+        """Reads a local media file and returns a base64 data URL for webview rendering."""
+        try:
+            p = Path(file_path).expanduser().resolve()
+            if not p.exists():
+                return None
+            mime, _ = mimetypes.guess_type(str(p))
+            if not mime:
+                ext = p.suffix.lower()
+                if ext in [".jpg", ".jpeg"]:
+                    mime = "image/jpeg"
+                elif ext == ".png":
+                    mime = "image/png"
+                elif ext == ".webp":
+                    mime = "image/webp"
+                elif ext == ".gif":
+                    mime = "image/gif"
+                elif ext == ".mp4":
+                    mime = "video/mp4"
+                elif ext == ".webm":
+                    mime = "video/webm"
+                elif ext == ".mp3":
+                    mime = "audio/mp3"
+                else:
+                    mime = "application/octet-stream"
+
+            data = p.read_bytes()
+            b64 = base64.b64encode(data).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
+        except Exception as e:
+            print(f"[AssistantApi] get_media_data_url error: {e}")
+            return None
+
+    def reveal_in_explorer(self, file_path):
+        """Reveals the given file or folder in Windows File Explorer."""
+        return AssistantTools.reveal_in_explorer(file_path)
 
 
 def start_desktop_app():

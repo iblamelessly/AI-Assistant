@@ -1,6 +1,7 @@
 import os
 import json
 import re
+from pathlib import Path
 import requests
 from .tools import AssistantTools
 from .voice import VoiceEngine
@@ -147,6 +148,19 @@ class AssistantEngine:
         ext = Path(target_path).suffix.lower()
         is_img = ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"]
         is_vid = ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]
+
+        # Direct display / play request
+        if any(w in msg for w in ["show this", "display this", "show photo", "display photo", "show image", "display image", "show video", "display video", "play video", "open media", "view image", "view photo", "view video", "show me"]):
+            return {
+                "tool": "display_media",
+                "param": Path(target_path).name,
+                "result": {
+                    "success": True,
+                    "action": f"Displayed {Path(target_path).name}",
+                    "output_path": target_path,
+                    "summary": f"Here is {Path(target_path).name}, sir."
+                }
+            }
 
         # --- IMAGE OPERATIONS ---
         if is_img:
@@ -540,6 +554,34 @@ class AssistantEngine:
                 self.history_mgr.add_message(session_id, "assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64)
                 return
+            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media"]:
+                tool_action_performed = fast_action
+                if on_tool:
+                    on_tool(fast_action)
+
+                res = fast_action.get("result", {})
+                summary_text = res.get("summary") or res.get("action") or "Action completed."
+                out_p = res.get("output_path")
+
+                if out_p:
+                    ext = Path(out_p).suffix.lower()
+                    mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] else (
+                        "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
+                            "audio" if ext in [".mp3", ".wav", ".m4a"] else "file"
+                        )
+                    )
+                    self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
+                    resp_msg = f"{summary_text}\n\n[MEDIA: {mtype} | {out_p}]"
+                else:
+                    resp_msg = summary_text
+
+                on_chunk(resp_msg)
+                speech_text = summary_text
+                audio_b64 = self.voice_engine.generate_speech_base64(speech_text) if self.voice_engine.is_enabled() else None
+                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
+                self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=fast_action)
+                on_complete(resp_msg, fast_action, audio_b64)
+                return
             else:
                 tool_action_performed = fast_action
                 if on_tool:
@@ -706,6 +748,12 @@ class AssistantEngine:
         if active_res and active_res.get("output_path"):
             out_p = active_res["output_path"]
             ext = Path(out_p).suffix.lower()
+            mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] else (
+                "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
+                    "audio" if ext in [".mp3", ".wav", ".m4a"] else "file"
+                )
+            )
+            self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
             if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] and "[MEDIA: image" not in clean_display:
                 clean_display += f"\n\n[MEDIA: image | {out_p}]"
             elif ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] and "[MEDIA: video" not in clean_display:
