@@ -465,6 +465,131 @@ class AssistantTools:
         return file_search_engine.reveal_in_explorer(file_path)
 
     @classmethod
+    def edit_image(cls, image_path: str, operation: str = "info", *params) -> dict:
+        """
+        Edits an image on the laptop using MediaEditor.
+        Operations:
+        - 'resize': params = [width, height (optional)]
+        - 'crop': params = [left, top, right, bottom]
+        - 'rotate': params = [degrees] (e.g. 90, 180, -90)
+        - 'flip': params = [direction] ('horizontal' or 'vertical')
+        - 'filter': params = [filter_name] ('grayscale', 'sepia', 'blur', 'sharpen', 'edge_enhance', 'contour', 'invert')
+        - 'adjust': params = [brightness, contrast, saturation, sharpness]
+        - 'watermark': params = [text, position (optional), color (optional)]
+        - 'convert': params = [target_format] ('png', 'jpg', 'webp')
+        """
+        from .media_editor import media_editor
+        op = operation.lower().strip()
+        p = Path(image_path).expanduser()
+        if not p.exists():
+            from .file_search import file_search_engine
+            f_res = file_search_engine.search_files(image_path)
+            if f_res:
+                p = Path(f_res[0]["path"])
+
+        if not p.exists():
+            return {"success": False, "error": f"Image file not found: {image_path}", "summary": f"Could not find image: {image_path}"}
+
+        img_str = str(p)
+        if op == "resize":
+            w = int(params[0]) if len(params) > 0 else 800
+            h = int(params[1]) if len(params) > 1 and params[1] else None
+            return media_editor.resize_image(img_str, w, h)
+        elif op == "crop":
+            l = int(params[0]) if len(params) > 0 else 0
+            t = int(params[1]) if len(params) > 1 else 0
+            r = int(params[2]) if len(params) > 2 else 500
+            b = int(params[3]) if len(params) > 3 else 500
+            return media_editor.crop_image(img_str, l, t, r, b)
+        elif op == "rotate":
+            deg = float(params[0]) if len(params) > 0 else 90.0
+            return media_editor.rotate_image(img_str, deg)
+        elif op == "flip":
+            d = str(params[0]) if len(params) > 0 else "horizontal"
+            return media_editor.flip_image(img_str, d)
+        elif op in ["filter", "apply_filter"]:
+            f_name = str(params[0]) if len(params) > 0 else "grayscale"
+            return media_editor.apply_filter(img_str, f_name)
+        elif op in ["adjust", "color"]:
+            b = float(params[0]) if len(params) > 0 else 1.0
+            c = float(params[1]) if len(params) > 1 else 1.0
+            s = float(params[2]) if len(params) > 2 else 1.0
+            sh = float(params[3]) if len(params) > 3 else 1.0
+            return media_editor.adjust_image(img_str, b, c, s, sh)
+        elif op in ["watermark", "add_watermark", "text"]:
+            txt = str(params[0]) if len(params) > 0 else "JARVIS AI"
+            pos = str(params[1]) if len(params) > 1 else "bottom-right"
+            col = str(params[2]) if len(params) > 2 else "white"
+            return media_editor.add_watermark(img_str, txt, position=pos, color=col)
+        elif op in ["convert", "format"]:
+            fmt = str(params[0]) if len(params) > 0 else "png"
+            return media_editor.convert_image(img_str, fmt)
+        else:
+            return media_editor.inspect_media(img_str)
+
+    @classmethod
+    def edit_video(cls, video_path: str, operation: str = "info", *params) -> dict:
+        """
+        Edits a video on the laptop using MediaEditor.
+        Operations:
+        - 'trim': params = [start_time, end_time] (e.g. '00:00:05', '00:00:20')
+        - 'resize': params = [width] (e.g. 720, 1080)
+        - 'extract_audio': params = [format] ('mp3' or 'wav')
+        - 'mute': params = []
+        - 'snapshot' / 'extract_frame': params = [timestamp_sec]
+        - 'convert': params = [target_format] ('mp4', 'gif', 'webm')
+        - 'speed': params = [speed_multiplier] (e.g. 1.5, 2.0, 0.5)
+        """
+        from .media_editor import media_editor
+        op = operation.lower().strip()
+        p = Path(video_path).expanduser()
+        if not p.exists():
+            from .file_search import file_search_engine
+            f_res = file_search_engine.search_files(video_path)
+            if f_res:
+                p = Path(f_res[0]["path"])
+
+        if not p.exists():
+            return {"success": False, "error": f"Video file not found: {video_path}", "summary": f"Could not find video: {video_path}"}
+
+        vid_str = str(p)
+        if op == "trim":
+            start_t = str(params[0]) if len(params) > 0 else "0"
+            end_t = str(params[1]) if len(params) > 1 else "10"
+            return media_editor.trim_video(vid_str, start_t, end_t)
+        elif op == "resize":
+            w = int(params[0]) if len(params) > 0 else 720
+            return media_editor.resize_video(vid_str, w)
+        elif op in ["extract_audio", "audio"]:
+            fmt = str(params[0]) if len(params) > 0 else "mp3"
+            return media_editor.extract_audio(vid_str, fmt)
+        elif op in ["mute", "remove_audio", "silence"]:
+            return media_editor.mute_video(vid_str)
+        elif op in ["snapshot", "extract_frame", "thumbnail"]:
+            t_sec = float(params[0]) if len(params) > 0 else 0.0
+            return media_editor.extract_frame(vid_str, t_sec)
+        elif op in ["convert", "format"]:
+            fmt = str(params[0]) if len(params) > 0 else "mp4"
+            return media_editor.convert_video(vid_str, fmt)
+        elif op in ["speed", "playback_speed"]:
+            sp = float(params[0]) if len(params) > 0 else 2.0
+            return media_editor.adjust_video_speed(vid_str, sp)
+        else:
+            return media_editor.inspect_media(vid_str)
+
+    @classmethod
+    def inspect_media(cls, media_path: str) -> dict:
+        """Inspects media returning dimensions, file format, and size."""
+        from .media_editor import media_editor
+        p = Path(media_path).expanduser()
+        if not p.exists():
+            from .file_search import file_search_engine
+            f_res = file_search_engine.search_files(media_path)
+            if f_res:
+                p = Path(f_res[0]["path"])
+        return media_editor.inspect_media(str(p))
+
+    @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:
         """Unified dispatcher for tool execution."""
         t = tool_name.lower().strip()
@@ -492,6 +617,12 @@ class AssistantTools:
             return cls.open_folder(arg0)
         elif t in ["reveal_in_explorer", "reveal_file", "locate_file", "show_in_folder"]:
             return cls.reveal_in_explorer(arg0)
+        elif t in ["edit_image", "image_edit", "modify_image", "resize_image", "crop_image", "filter_image"]:
+            return cls.edit_image(arg0, arg1, *args[2:])
+        elif t in ["edit_video", "video_edit", "trim_video", "resize_video", "extract_audio", "mute_video"]:
+            return cls.edit_video(arg0, arg1, *args[2:])
+        elif t in ["inspect_media", "media_info", "image_info", "video_info"]:
+            return cls.inspect_media(arg0)
         elif t in ["set_volume", "volume"]:
             return cls.set_volume(arg0)
         elif t in ["take_screenshot", "screenshot"]:

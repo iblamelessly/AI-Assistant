@@ -21,3 +21,9 @@ ENV/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# User Uploaded and Processed Media
+media/output/*
+!media/output/.gitkeep
+media/uploads/*
+!media/uploads/.gitkeep

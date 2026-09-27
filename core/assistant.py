@@ -38,6 +38,7 @@ class AssistantEngine:
         self.ollama_model = self.config_mgr.get("ollama_model", "qwen3:1.7b")
         self.ollama_url = self.config_mgr.get("ollama_url", "http://localhost:11434").rstrip("/")
         self.chat_url = f"{self.ollama_url}/api/chat"
+        self.latest_media = None
 
     @property
     def model(self) -> str:
@@ -100,7 +101,10 @@ class AssistantEngine:
             "4. Smart App Launching: When the user asks to open an application, think carefully about what they meant. "
             "If an app has multiple editions or is ambiguous, ask them for clarification with suggestions.\n"
             "5. File & Folder Disambiguation: If a file or folder search yields multiple matches across different directories, "
-            "do not guess blindly. Present the choices to the user with helpful suggestions.\n\n"
+            "do not guess blindly. Present the choices to the user with helpful suggestions.\n"
+            "6. Photos, Videos & Media Editing: When the user attaches, asks to view, or requests editing of a photo or video "
+            "(resize, crop, rotate, flip, filter, watermark, trim, mute, extract audio, speed change), perform the action with "
+            "the corresponding tool and always present the result using [MEDIA: image | path] or [MEDIA: video | path].\n\n"
             "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
             "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
             "- Run terminal/PowerShell: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
@@ -112,6 +116,9 @@ class AssistantEngine:
             "- Open file: [ACTION: open_file(\"path_to_file\")]\n"
             "- Open folder: [ACTION: open_folder(\"path_to_folder\")]\n"
             "- Reveal in Explorer: [ACTION: reveal_in_explorer(\"path_to_file\")]\n"
+            "- Edit image: [ACTION: edit_image(\"path\", \"resize|crop|rotate|flip|filter|adjust|watermark|convert\", \"param1\", \"param2\")]\n"
+            "- Edit video: [ACTION: edit_video(\"path\", \"trim|resize|extract_audio|mute|snapshot|convert|speed\", \"param1\", \"param2\")]\n"
+            "- Inspect media: [ACTION: inspect_media(\"path\")]\n"
             "- Adjust volume: [ACTION: set_volume(\"up\" | \"down\" | \"mute\" | \"set to 50\")]\n"
             "- Screenshot: [ACTION: take_screenshot()]\n"
             "- Open app: [ACTION: open_app(\"app_name\")]\n"
@@ -119,9 +126,119 @@ class AssistantEngine:
             "- Web search: [ACTION: web_search(\"query\")]\n"
         )
 
+    def _detect_media_intent(self, msg: str, raw_msg: str):
+        """Detects image or video editing requests on the fast path."""
+        target_path = None
+
+        # Check if message mentions an explicit filename (e.g. "photo.jpg", "test.mp4")
+        explicit_file = re.search(r"([a-zA-Z0-9_\-\.\\]+\.(?:jpg|jpeg|png|webp|bmp|gif|mp4|mov|avi|mkv|webm))\b", msg)
+        if explicit_file:
+            from .file_search import file_search_engine
+            f_matches = file_search_engine.search_files(explicit_file.group(1))
+            if f_matches:
+                target_path = f_matches[0]["path"]
+
+        if not target_path and self.latest_media and "path" in self.latest_media:
+            target_path = self.latest_media["path"]
+
+        if not target_path or not os.path.exists(target_path):
+            return None
+
+        ext = Path(target_path).suffix.lower()
+        is_img = ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"]
+        is_vid = ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]
+
+        # --- IMAGE OPERATIONS ---
+        if is_img:
+            if any(w in msg for w in ["black and white", "grayscale", "grey", "monochrome"]):
+                res = AssistantTools.edit_image(target_path, "filter", "grayscale")
+                return {"tool": "edit_image", "param": "grayscale", "result": res}
+
+            if "sepia" in msg:
+                res = AssistantTools.edit_image(target_path, "filter", "sepia")
+                return {"tool": "edit_image", "param": "sepia", "result": res}
+
+            for f in ["blur", "sharpen", "invert", "contour", "emboss"]:
+                if f in msg:
+                    res = AssistantTools.edit_image(target_path, "filter", f)
+                    return {"tool": "edit_image", "param": f, "result": res}
+
+            rot_match = re.search(r"rotate\s+(?:by\s+)?(-?\d+)", msg)
+            if rot_match:
+                deg = float(rot_match.group(1))
+                res = AssistantTools.edit_image(target_path, "rotate", deg)
+                return {"tool": "edit_image", "param": f"rotate {deg}", "result": res}
+            elif "rotate" in msg:
+                res = AssistantTools.edit_image(target_path, "rotate", 90.0)
+                return {"tool": "edit_image", "param": "rotate 90", "result": res}
+
+            if "flip" in msg or "mirror" in msg:
+                d = "vertical" if "vertical" in msg else "horizontal"
+                res = AssistantTools.edit_image(target_path, "flip", d)
+                return {"tool": "edit_image", "param": f"flip {d}", "result": res}
+
+            res_match = re.search(r"resize\s+(?:to\s+)?(\d+)(?:\s*[xX*,\s]\s*(\d+))?", msg)
+            if res_match:
+                w = int(res_match.group(1))
+                h = int(res_match.group(2)) if res_match.group(2) else None
+                res = AssistantTools.edit_image(target_path, "resize", w, h)
+                return {"tool": "edit_image", "param": f"resize {w}x{h}", "result": res}
+
+            wm_match = re.search(r"(?:watermark|add text|overlay text)\s+(?:with\s+|as\s+)?['\"]?([^'\"\n]+)['\"]?", msg)
+            if wm_match:
+                wm_text = wm_match.group(1).strip()
+                res = AssistantTools.edit_image(target_path, "watermark", wm_text)
+                return {"tool": "edit_image", "param": f"watermark '{wm_text}'", "result": res}
+
+            conv_match = re.search(r"convert\s+(?:to\s+)?(png|jpg|jpeg|webp|bmp)", msg)
+            if conv_match:
+                fmt = conv_match.group(1)
+                res = AssistantTools.edit_image(target_path, "convert", fmt)
+                return {"tool": "edit_image", "param": f"convert to {fmt}", "result": res}
+
+        # --- VIDEO OPERATIONS ---
+        if is_vid:
+            trim_match = re.search(r"(?:trim|cut)\s+(?:from\s+)?(\d+(?::\d+)?)\s*(?:to|-)\s*(\d+(?::\d+)?)", msg)
+            if trim_match:
+                s_t = trim_match.group(1)
+                e_t = trim_match.group(2)
+                res = AssistantTools.edit_video(target_path, "trim", s_t, e_t)
+                return {"tool": "edit_video", "param": f"trim {s_t}-{e_t}", "result": res}
+
+            if any(w in msg for w in ["mute", "remove audio", "silence video", "strip audio"]):
+                res = AssistantTools.edit_video(target_path, "mute")
+                return {"tool": "edit_video", "param": "mute", "result": res}
+
+            if any(w in msg for w in ["extract audio", "to mp3", "convert to mp3", "audio only"]):
+                res = AssistantTools.edit_video(target_path, "extract_audio", "mp3")
+                return {"tool": "edit_video", "param": "extract_audio mp3", "result": res}
+
+            if any(w in msg for w in ["snapshot", "screenshot", "extract frame", "thumbnail"]):
+                time_match = re.search(r"at\s+(\d+(?:\.\d+)?)", msg)
+                t_sec = float(time_match.group(1)) if time_match else 0.0
+                res = AssistantTools.edit_video(target_path, "snapshot", t_sec)
+                return {"tool": "edit_video", "param": f"snapshot at {t_sec}s", "result": res}
+
+            speed_match = re.search(r"speed\s+(?:up\s+to\s+|to\s+)?(\d+(?:\.\d+)?)[xX]?", msg)
+            if speed_match:
+                sp = float(speed_match.group(1))
+                res = AssistantTools.edit_video(target_path, "speed", sp)
+                return {"tool": "edit_video", "param": f"speed {sp}x", "result": res}
+
+            if "to gif" in msg or "as gif" in msg:
+                res = AssistantTools.edit_video(target_path, "convert", "gif")
+                return {"tool": "edit_video", "param": "convert to gif", "result": res}
+
+        return None
+
     def _detect_fast_intent(self, user_message: str):
         """Fast-path detector for immediate direct user commands."""
         msg = user_message.lower().strip()
+
+        # Media editing (image / video operations)
+        media_action = self._detect_media_intent(msg, user_message)
+        if media_action:
+            return media_action
 
         # Git status
         if msg in ["git status", "check git status", "check my git", "git diff", "git log"]:
@@ -218,7 +335,7 @@ class AssistantEngine:
 
         return None
 
-    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None):
+    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None):
         """
         Processes a chat turn with:
         1. Human confirmation check (Yes/No response evaluation)
@@ -226,7 +343,11 @@ class AssistantEngine:
         3. Fast-path & autonomous tool execution
         4. Groq (Llama 3.3 70B) or Ollama streaming
         5. Neural Voice synthesis
+        6. Media attachments & autonomous photo/video processing
         """
+        # Record attached media if provided
+        if attachments and isinstance(attachments, list) and len(attachments) > 0:
+            self.latest_media = attachments[-1]
         # 1. Check if user is replying to a pending confirmation
         if self.permission_guard.has_pending():
             eval_res = self.permission_guard.evaluate_user_reply(user_message)
@@ -435,6 +556,10 @@ class AssistantEngine:
                 conversation_messages.append({"role": m["role"], "content": m["content"]})
 
         user_prompt_content = user_message
+        if attachments:
+            media_lines = [f"[Attached Media: {a.get('name', 'file')} ({a.get('type', 'media')}) at path: `{a.get('path', '')}`]" for a in attachments]
+            user_prompt_content += "\n\n" + "\n".join(media_lines)
+
         if fast_action and fast_action.get("result"):
             action_desc = fast_action["result"].get("summary") or fast_action["result"].get("action")
             user_prompt_content += f"\n\n[System Notification: Automatically executed {fast_action['tool']}. Result: {action_desc}]"
@@ -501,7 +626,7 @@ class AssistantEngine:
                 full_response += ask_confirm_msg
 
                 audio_b64 = self.voice_engine.generate_speech_base64(inspection["question"]) if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", full_response)
                 on_complete(full_response, None, audio_b64)
                 return
@@ -530,7 +655,7 @@ class AssistantEngine:
                 )
                 on_chunk(doubt_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching. Which one would you like to open?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", doubt_msg)
                 on_complete(doubt_msg, None, audio_b64)
                 return
@@ -545,7 +670,7 @@ class AssistantEngine:
                 )
                 on_chunk(doubt_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {t_result['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", doubt_msg)
                 on_complete(doubt_msg, None, audio_b64)
                 return
@@ -558,7 +683,7 @@ class AssistantEngine:
                 )
                 on_chunk(ask_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
+                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64)
                 return
@@ -576,16 +701,29 @@ class AssistantEngine:
         if not clean_display and tool_action_performed:
             clean_display = tool_action_performed.get("result", {}).get("summary") or tool_action_performed.get("result", {}).get("action", "Action completed, sir.")
 
+        # Check if media output was generated
+        active_res = (tool_action_performed or fast_action or {}).get("result", {})
+        if active_res and active_res.get("output_path"):
+            out_p = active_res["output_path"]
+            ext = Path(out_p).suffix.lower()
+            if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] and "[MEDIA: image" not in clean_display:
+                clean_display += f"\n\n[MEDIA: image | {out_p}]"
+            elif ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] and "[MEDIA: video" not in clean_display:
+                clean_display += f"\n\n[MEDIA: video | {out_p}]"
+            elif ext in [".mp3", ".wav", ".m4a"] and "[MEDIA: audio" not in clean_display:
+                clean_display += f"\n\n[MEDIA: audio | {out_p}]"
+
         # 9. Voice Synthesis
         audio_b64 = None
         if self.voice_engine.is_enabled():
             try:
-                audio_b64 = self.voice_engine.generate_speech_base64(clean_display)
+                speech_text = clean_display.split("[MEDIA:")[0].strip()
+                audio_b64 = self.voice_engine.generate_speech_base64(speech_text)
             except Exception as e:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")
 
         # 10. Record history
-        self.history_mgr.add_message(session_id, "user", user_message)
+        self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
         self.history_mgr.add_message(session_id, "assistant", clean_display, tool_info=tool_action_performed)
 
         on_complete(clean_display, tool_action_performed, audio_b64)

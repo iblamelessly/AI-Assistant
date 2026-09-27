@@ -68,7 +68,7 @@ class HistoryManager:
         self._save()
         return new_session
 
-    def add_message(self, session_id, role, content, tool_info=None):
+    def add_message(self, session_id, role, content, tool_info=None, attachments=None):
         with self._lock:
             session = None
             for s in self.sessions:
@@ -92,6 +92,8 @@ class HistoryManager:
             }
             if tool_info:
                 msg["tool_info"] = tool_info
+            if attachments:
+                msg["attachments"] = attachments
 
             session["messages"].append(msg)
 
