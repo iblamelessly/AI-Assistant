@@ -27,3 +27,7 @@ media/output/*
 !media/output/.gitkeep
 media/uploads/*
 !media/uploads/.gitkeep
+
+# Generated Documents (PPTX, DOCX, PDF)
+documents/output/*
+!documents/output/.gitkeep

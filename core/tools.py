@@ -590,6 +590,24 @@ class AssistantTools:
         return media_editor.inspect_media(str(p))
 
     @classmethod
+    def create_presentation(cls, topic: str, theme: str = "jarvis_dark", output_path: str = None) -> dict:
+        """Creates a professional 16:9 widescreen PowerPoint (.pptx) presentation."""
+        from .document_generator import document_generator
+        return document_generator.create_presentation(topic, theme_name=theme or "jarvis_dark", output_path=output_path)
+
+    @classmethod
+    def create_document(cls, title: str, theme: str = "executive", output_path: str = None) -> dict:
+        """Creates a professional Word (.docx) document with custom styling, callouts, and tables."""
+        from .document_generator import document_generator
+        return document_generator.create_document(title, theme_name=theme or "executive", output_path=output_path)
+
+    @classmethod
+    def create_pdf(cls, title: str, theme: str = "modern_tech", output_path: str = None) -> dict:
+        """Creates a publication-quality PDF (.pdf) report with executive layout and dynamic footers."""
+        from .document_generator import document_generator
+        return document_generator.create_pdf(title, theme_name=theme or "modern_tech", output_path=output_path)
+
+    @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:
         """Unified dispatcher for tool execution."""
         t = tool_name.lower().strip()
@@ -623,6 +641,12 @@ class AssistantTools:
             return cls.edit_video(arg0, arg1, *args[2:])
         elif t in ["inspect_media", "media_info", "image_info", "video_info"]:
             return cls.inspect_media(arg0)
+        elif t in ["create_presentation", "create_ppt", "create_pptx", "generate_ppt", "make_ppt", "make_presentation"]:
+            return cls.create_presentation(arg0, arg1 or "jarvis_dark")
+        elif t in ["create_document", "create_word", "create_docx", "generate_word", "make_word", "make_document"]:
+            return cls.create_document(arg0, arg1 or "executive")
+        elif t in ["create_pdf", "generate_pdf", "make_pdf"]:
+            return cls.create_pdf(arg0, arg1 or "modern_tech")
         elif t in ["set_volume", "volume"]:
             return cls.set_volume(arg0)
         elif t in ["take_screenshot", "screenshot"]:
