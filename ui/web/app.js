@@ -304,6 +304,13 @@ function renderToolHtml(toolInfo) {
     return `<div class="tool-badge">📊 ${escapeHtml(res.summary || 'Media inspected')}</div>`;
   }
 
+  if (toolName === "create_presentation" || toolName === "create_document" || toolName === "create_pdf") {
+    const isSuccess = res.success !== false;
+    const actionDesc = res.summary || (isSuccess ? "Document generated successfully" : ("Error: " + (res.error || "Failed")));
+    const icon = toolName === "create_presentation" ? "📊" : (toolName === "create_document" ? "📝" : "📑");
+    return `<div class="tool-badge">${icon} ${escapeHtml(actionDesc)}</div>`;
+  }
+
   const actionDesc = res.summary || res.action || "Action executed";
   return `<div class="tool-badge">⚡ ${escapeHtml(actionDesc)}</div>`;
 }
@@ -312,11 +319,113 @@ function renderToolHtml(toolInfo) {
 function getSuggestionIcon(text) {
   const t = text.toLowerCase();
   if (t === "cancel" || t.includes("cancel")) return "✕";
-  if (t.includes(".py") || t.includes(".txt") || t.includes(".pdf") || t.includes(".json") || t.includes(".doc") || t.includes("file")) return "📄";
-  if (t.includes("folder") || t.includes("/") || t.includes("\\")) return "📁";
-  if (t.includes("browser") || t.includes("web") || t.includes("http")) return "🌐";
+  if (t.includes("open document") || t.includes("view document")) return "📖";
+  if (t.includes("reveal") || t.includes("folder")) return "📂";
+  if (t.includes("ppt") || t.includes("presentation") || t.includes("slides")) return "📊";
+  if (t.includes("word") || t.includes("docx")) return "📝";
+  if (t.includes("pdf")) return "📑";
+  if (t.includes("channel") || t.includes("youtube") || t.includes("video")) return "▶️";
+  if (t.includes("browser") || t.includes("web") || t.includes("official") || t.includes("page") || t.includes("site") || t.includes("http")) return "🌐";
+  if (t.includes(".py") || t.includes(".txt") || t.includes(".json") || t.includes(".doc") || t.includes("file")) return "📄";
   return "⚡";
 }
+
+// Extract suggestions from [Suggestion: ...] or bracketed choices [Opt 1] [Opt 2] [Cancel]
+function extractSuggestions(content) {
+  if (!content) return { cleanText: "", suggestions: [] };
+
+  let text = content;
+  let suggestions = [];
+
+  // 1. Explicit [Suggestion: Option 1 | Option 2 | Cancel]
+  const suggMatch = text.match(/\[Suggestion:\s*(.*?)\]/i);
+  if (suggMatch) {
+    const rawOptions = suggMatch[1].split("|").map(s => s.trim()).filter(Boolean);
+    suggestions.push(...rawOptions);
+    text = text.replace(/\[Suggestion:\s*.*?\]/gi, "").trim();
+  }
+
+  // 2. Trailing bracketed buttons [Opt 1] [Opt 2] [Cancel], separated by em-space (\u2003), spaces, tabs, or |
+  if (suggestions.length === 0) {
+    const trailingPattern = /(?:(?:\*{0,2})\[([^[\]\n]{2,60})\](?:\*{0,2})[\s\u2000-\u200B|]{0,8}){2,}\s*$/;
+    const trailingMatch = text.match(trailingPattern);
+    if (trailingMatch) {
+      const chunk = trailingMatch[0];
+      const singleItemRegex = /\[([^[\]\n]{2,60})\]/g;
+      let m;
+      const found = [];
+      while ((m = singleItemRegex.exec(chunk)) !== null) {
+        const item = m[1].trim();
+        if (!item.startsWith("ACTION:") && !item.startsWith("MEDIA:") && !item.startsWith("DOCUMENT:") && !item.startsWith("http")) {
+          found.push(item);
+        }
+      }
+      if (found.length >= 2) {
+        suggestions.push(...found);
+        text = text.substring(0, trailingMatch.index).trim();
+      }
+    }
+  }
+
+  return { cleanText: text, suggestions };
+}
+
+// Render generated presentation, word, or pdf document card
+function renderDocumentTags(htmlText) {
+  if (!htmlText) return "";
+  const docRegex = /\[DOCUMENT:\s*(pptx|docx|pdf)\s*\|\s*([^\]]+)\]/gi;
+  return htmlText.replace(docRegex, function(match, format, filePath) {
+    const cleanPath = filePath.trim();
+    const fileName = cleanPath.split(/[\\/]/).pop();
+    const cleanArg = cleanPath.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    const fmt = format.toLowerCase();
+
+    let icon = "📊";
+    let badgeLabel = "PowerPoint Presentation";
+    let badgeClass = "badge-pptx";
+
+    if (fmt === "docx") {
+      icon = "📝";
+      badgeLabel = "Word Document";
+      badgeClass = "badge-docx";
+    } else if (fmt === "pdf") {
+      icon = "📑";
+      badgeLabel = "PDF Document";
+      badgeClass = "badge-pdf";
+    }
+
+    return `
+      <div class="chat-document-card">
+        <div class="chat-doc-icon-box ${badgeClass}">
+          <span class="chat-doc-big-icon">${icon}</span>
+          <span class="chat-doc-format-label">${fmt.toUpperCase()}</span>
+        </div>
+        <div class="chat-doc-details">
+          <div class="chat-doc-header">
+            <span class="chat-doc-badge ${badgeClass}">${badgeLabel}</span>
+          </div>
+          <div class="chat-doc-filename" title="${escapeHtml(cleanPath)}">${escapeHtml(fileName)}</div>
+          <div class="chat-doc-actions">
+            <button class="btn-doc-action primary" onclick="openDocumentFile('${cleanArg}')" title="Open in default viewer">
+              <span>▶ Open Document</span>
+            </button>
+            <button class="btn-doc-action" onclick="revealMediaFile('${cleanArg}')" title="Reveal in File Explorer">
+              <span>📂 Open Folder</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+}
+
+window.openDocumentFile = function(filePath) {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.open_document_file) {
+    window.pywebview.api.open_document_file(filePath);
+  } else if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.reveal_in_explorer(filePath);
+  }
+};
 
 // Universal Clipboard Copy with Fallback
 function copyToClipboard(text, button, successLabel = "✓ Copied") {
@@ -566,8 +675,14 @@ function appendMessageBubble(role, content, toolInfo = null, attachments = null)
     htmlContent += renderUserAttachments(attachments);
   }
 
-  const cleanContent = (role === "assistant") ? content.replace(/\[Suggestion:\s*.*?\]/gi, "").trim() : content;
-  htmlContent += renderMediaTags(parseMarkdown(cleanContent));
+  let cleanContent = content;
+  let suggestions = [];
+  if (role === "assistant") {
+    const extracted = extractSuggestions(content);
+    cleanContent = extracted.cleanText;
+    suggestions = extracted.suggestions;
+  }
+  htmlContent += renderDocumentTags(renderMediaTags(parseMarkdown(cleanContent)));
 
   // If Jarvis asks a human confirmation question, add interactive Yes/No buttons
   if (role === "assistant" && (content.includes("[Yes / No]") || content.includes("[Yes/No]") || content.includes("[Overwrite / Cancel]") || content.includes("Proceed?"))) {
@@ -579,20 +694,16 @@ function appendMessageBubble(role, content, toolInfo = null, attachments = null)
     `;
   }
 
-  // If Jarvis offers application, file, or multiple-choice suggestions
-  const suggMatch = content.match(/\[Suggestion:\s*(.*?)\]/i);
-  if (role === "assistant" && suggMatch) {
-    const rawOptions = suggMatch[1].split("|").map(s => s.trim()).filter(Boolean);
-    if (rawOptions.length > 0) {
-      let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
-      rawOptions.forEach(opt => {
-        const cleanArg = opt.replace(/'/g, "\\'");
-        const icon = getSuggestionIcon(opt);
-        suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">${icon} ${escapeHtml(opt)}</button>`;
-      });
-      suggHtml += `</div>`;
-      htmlContent += suggHtml;
-    }
+  // If Jarvis offers application, file, document, or multiple-choice suggestions
+  if (role === "assistant" && suggestions.length > 0) {
+    let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
+    suggestions.forEach(opt => {
+      const cleanArg = opt.replace(/'/g, "\\'");
+      const icon = getSuggestionIcon(opt);
+      suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">${icon} ${escapeHtml(opt)}</button>`;
+    });
+    suggHtml += `</div>`;
+    htmlContent += suggHtml;
   }
 
   bubble.innerHTML = htmlContent;
@@ -620,7 +731,8 @@ window.onToolExecuted = function(toolInfo) {
 window.onStreamChunk = function(chunk) {
   currentStreamBuffer += chunk;
   if (currentAssistantBubble) {
-    currentAssistantBubble.innerHTML = renderMediaTags(parseMarkdown(currentStreamBuffer)) + '<span class="typing-cursor"></span>';
+    const extracted = extractSuggestions(currentStreamBuffer);
+    currentAssistantBubble.innerHTML = renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText))) + '<span class="typing-cursor"></span>';
     loadAsyncMediaElements(currentAssistantBubble);
     scrollToBottom();
   }
@@ -636,8 +748,8 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
     if (toolInfo) {
       finalHtml += renderToolHtml(toolInfo);
     }
-    const cleanFull = fullResponse.replace(/\[Suggestion:\s*.*?\]/gi, "").trim();
-    finalHtml += renderMediaTags(parseMarkdown(cleanFull));
+    const extracted = extractSuggestions(fullResponse);
+    finalHtml += renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText)));
 
     if (fullResponse.includes("[Yes / No]") || fullResponse.includes("[Yes/No]") || fullResponse.includes("[Overwrite / Cancel]") || fullResponse.includes("Proceed?")) {
       finalHtml += `
@@ -648,19 +760,15 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
       `;
     }
 
-    const completeSuggMatch = fullResponse.match(/\[Suggestion:\s*(.*?)\]/i);
-    if (completeSuggMatch) {
-      const rawOptions = completeSuggMatch[1].split("|").map(s => s.trim()).filter(Boolean);
-      if (rawOptions.length > 0) {
-        let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
-        rawOptions.forEach(opt => {
-          const cleanArg = opt.replace(/'/g, "\\'");
-          const icon = getSuggestionIcon(opt);
-          suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">${icon} ${escapeHtml(opt)}</button>`;
-        });
-        suggHtml += `</div>`;
-        finalHtml += suggHtml;
-      }
+    if (extracted.suggestions.length > 0) {
+      let suggHtml = `<div class="app-suggestion-actions" style="margin-top:10px;">`;
+      extracted.suggestions.forEach(opt => {
+        const cleanArg = opt.replace(/'/g, "\\'");
+        const icon = getSuggestionIcon(opt);
+        suggHtml += `<button class="btn-app-suggestion" onclick="replyConfirmation('${cleanArg}')">${icon} ${escapeHtml(opt)}</button>`;
+      });
+      suggHtml += `</div>`;
+      finalHtml += suggHtml;
     }
 
     currentAssistantBubble.innerHTML = finalHtml;

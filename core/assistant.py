@@ -105,7 +105,11 @@ class AssistantEngine:
             "do not guess blindly. Present the choices to the user with helpful suggestions.\n"
             "6. Photos, Videos & Media Editing: When the user attaches, asks to view, or requests editing of a photo or video "
             "(resize, crop, rotate, flip, filter, watermark, trim, mute, extract audio, speed change), perform the action with "
-            "the corresponding tool and always present the result using [MEDIA: image | path] or [MEDIA: video | path].\n\n"
+            "the corresponding tool and always present the result using [MEDIA: image | path] or [MEDIA: video | path].\n"
+            "7. Interactive Suggestion Buttons: Whenever you provide options, recommendations, follow-up actions, or web links, ALWAYS present them as interactive suggestion chips using the format:\n"
+            "[Suggestion: Option 1 | Option 2 | Option 3 | Cancel]\n"
+            "Never write plain brackets like '[Option 1] [Option 2]' without the [Suggestion: ...] wrapper.\n"
+            "8. Professional Document Generation: When asked to create presentations (.pptx), Word documents (.docx), or PDF reports (.pdf), use create_presentation, create_document, or create_pdf with structured topics. Craft thorough, beautifully formatted documents with executive styling.\n\n"
             "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
             "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
             "- Run terminal/PowerShell: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
@@ -117,6 +121,9 @@ class AssistantEngine:
             "- Open file: [ACTION: open_file(\"path_to_file\")]\n"
             "- Open folder: [ACTION: open_folder(\"path_to_folder\")]\n"
             "- Reveal in Explorer: [ACTION: reveal_in_explorer(\"path_to_file\")]\n"
+            "- Create presentation (PowerPoint): [ACTION: create_presentation(\"topic\", \"optional_theme\")]\n"
+            "- Create Word document: [ACTION: create_document(\"title\", \"optional_theme\")]\n"
+            "- Create PDF report: [ACTION: create_pdf(\"title\", \"optional_theme\")]\n"
             "- Edit image: [ACTION: edit_image(\"path\", \"resize|crop|rotate|flip|filter|adjust|watermark|convert\", \"param1\", \"param2\")]\n"
             "- Edit video: [ACTION: edit_video(\"path\", \"trim|resize|extract_audio|mute|snapshot|convert|speed\", \"param1\", \"param2\")]\n"
             "- Inspect media: [ACTION: inspect_media(\"path\")]\n"
@@ -245,9 +252,99 @@ class AssistantEngine:
 
         return None
 
+    def _detect_document_intent(self, msg: str, raw_msg: str):
+        """Detects PowerPoint, Word, or PDF creation requests on the fast path."""
+        # 0. Open existing latest document
+        if any(w in msg for w in ["open document", "open the document", "open ppt", "open the ppt", "open presentation", "view document", "view presentation", "open pdf", "view pdf"]):
+            if self.latest_media and "path" in self.latest_media:
+                target_p = self.latest_media["path"]
+                if os.path.exists(target_p):
+                    ext = Path(target_p).suffix.lower()
+                    if ext in [".pptx", ".docx", ".pdf"]:
+                        open_res = AssistantTools.open_file(target_p)
+                        return {
+                            "tool": "open_file",
+                            "param": target_p,
+                            "result": {
+                                "success": True,
+                                "summary": f"Opened **{Path(target_p).name}** in your default application.",
+                                "action": "open_file"
+                            }
+                        }
+
+        # Helper to extract topic
+        def extract_topic(text, keywords):
+            for kw in keywords:
+                p1 = rf"(?:create|generate|make|build|prepare|write|give(?:\s+me)?)\s+(?:a|an)?\s*{kw}\s+(?:on|about|for|regarding|titled)?\s*(.+)"
+                m1 = re.search(p1, text, re.IGNORECASE)
+                if m1:
+                    return m1.group(1).strip().strip("\"'")
+                p2 = rf"\b{kw}\s+(?:on|about|for|regarding|titled)\s+(.+)"
+                m2 = re.search(p2, text, re.IGNORECASE)
+                if m2:
+                    return m2.group(1).strip().strip("\"'")
+            return None
+
+        # 1. PowerPoint / Presentation / PPT / Slides
+        if any(re.search(rf"\b{k}\b", msg) for k in ["presentation", "powerpoint", "ppt", "pptx", "slides", "slide deck"]):
+            topic = extract_topic(raw_msg, ["presentation", "powerpoint", "pptx", "ppt", "slides", "slide deck"])
+            if not topic:
+                for k in ["presentation", "powerpoint", "pptx", "ppt", "slides"]:
+                    if re.search(rf"\b{k}\b", msg):
+                        cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", raw_msg, flags=re.IGNORECASE).strip()
+                        cleaned = re.sub(r"^(?:on|about|for|regarding)\s+", "", cleaned, flags=re.IGNORECASE).strip()
+                        if cleaned:
+                            topic = cleaned
+                            break
+            if topic:
+                topic = re.sub(r"^(?:a|an|the|some)\s+", "", topic, flags=re.IGNORECASE).strip()
+                res = AssistantTools.create_presentation(topic)
+                return {"tool": "create_presentation", "param": topic, "result": res}
+
+        # 2. Word Document (.docx)
+        word_keywords = ["word document", "word doc", "word file", "docx", "word report"]
+        if any(k in msg for k in word_keywords):
+            topic = extract_topic(raw_msg, word_keywords)
+            if not topic:
+                for k in word_keywords:
+                    if k in msg:
+                        cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", raw_msg, flags=re.IGNORECASE).strip()
+                        cleaned = re.sub(r"^(?:on|about|for|regarding)\s+", "", cleaned, flags=re.IGNORECASE).strip()
+                        if cleaned:
+                            topic = cleaned
+                            break
+            if topic:
+                topic = re.sub(r"^(?:a|an|the|some)\s+", "", topic, flags=re.IGNORECASE).strip()
+                res = AssistantTools.create_document(topic)
+                return {"tool": "create_document", "param": topic, "result": res}
+
+        # 3. PDF Document / Report (.pdf)
+        if any(re.search(rf"\b{k}\b", msg) for k in ["pdf report", "pdf document", "pdf file", "pdf"]):
+            if "search" not in msg and "find" not in msg:
+                topic = extract_topic(raw_msg, ["pdf report", "pdf document", "pdf file", "pdf"])
+                if not topic:
+                    for k in ["pdf report", "pdf document", "pdf file", "pdf"]:
+                        if re.search(rf"\b{k}\b", msg):
+                            cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", raw_msg, flags=re.IGNORECASE).strip()
+                            cleaned = re.sub(r"^(?:on|about|for|regarding)\s+", "", cleaned, flags=re.IGNORECASE).strip()
+                            if cleaned:
+                                topic = cleaned
+                                break
+                if topic:
+                    topic = re.sub(r"^(?:a|an|the|some)\s+", "", topic, flags=re.IGNORECASE).strip()
+                    res = AssistantTools.create_pdf(topic)
+                    return {"tool": "create_pdf", "param": topic, "result": res}
+
+        return None
+
     def _detect_fast_intent(self, user_message: str):
         """Fast-path detector for immediate direct user commands."""
         msg = user_message.lower().strip()
+
+        # Document generation (PowerPoint, Word, PDF)
+        doc_action = self._detect_document_intent(msg, user_message)
+        if doc_action:
+            return doc_action
 
         # Media editing (image / video operations)
         media_action = self._detect_media_intent(msg, user_message)
@@ -554,7 +651,7 @@ class AssistantEngine:
                 self.history_mgr.add_message(session_id, "assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64)
                 return
-            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media"]:
+            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file"]:
                 tool_action_performed = fast_action
                 if on_tool:
                     on_tool(fast_action)
@@ -567,11 +664,20 @@ class AssistantEngine:
                     ext = Path(out_p).suffix.lower()
                     mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] else (
                         "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
-                            "audio" if ext in [".mp3", ".wav", ".m4a"] else "file"
+                            "audio" if ext in [".mp3", ".wav", ".m4a"] else (
+                                "pptx" if ext == ".pptx" else (
+                                    "docx" if ext == ".docx" else (
+                                        "pdf" if ext == ".pdf" else "document"
+                                    )
+                                )
+                            )
                         )
                     )
                     self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
-                    resp_msg = f"{summary_text}\n\n[MEDIA: {mtype} | {out_p}]"
+                    if ext in [".pptx", ".docx", ".pdf"]:
+                        resp_msg = f"{summary_text}\n\n[DOCUMENT: {ext[1:]} | {out_p}]\n\n[Suggestion: Open Document | Reveal in Folder | Create PDF | Create PPT]"
+                    else:
+                        resp_msg = f"{summary_text}\n\n[MEDIA: {mtype} | {out_p}]"
                 else:
                     resp_msg = summary_text
 
@@ -743,18 +849,26 @@ class AssistantEngine:
         if not clean_display and tool_action_performed:
             clean_display = tool_action_performed.get("result", {}).get("summary") or tool_action_performed.get("result", {}).get("action", "Action completed, sir.")
 
-        # Check if media output was generated
+        # Check if media or document output was generated
         active_res = (tool_action_performed or fast_action or {}).get("result", {})
         if active_res and active_res.get("output_path"):
             out_p = active_res["output_path"]
             ext = Path(out_p).suffix.lower()
             mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] else (
                 "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
-                    "audio" if ext in [".mp3", ".wav", ".m4a"] else "file"
+                    "audio" if ext in [".mp3", ".wav", ".m4a"] else (
+                        "pptx" if ext == ".pptx" else (
+                            "docx" if ext == ".docx" else (
+                                "pdf" if ext == ".pdf" else "document"
+                            )
+                        )
+                    )
                 )
             )
             self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
-            if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] and "[MEDIA: image" not in clean_display:
+            if ext in [".pptx", ".docx", ".pdf"] and "[DOCUMENT:" not in clean_display:
+                clean_display += f"\n\n[DOCUMENT: {ext[1:]} | {out_p}]\n\n[Suggestion: Open Document | Reveal in Folder]"
+            elif ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] and "[MEDIA: image" not in clean_display:
                 clean_display += f"\n\n[MEDIA: image | {out_p}]"
             elif ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] and "[MEDIA: video" not in clean_display:
                 clean_display += f"\n\n[MEDIA: video | {out_p}]"
@@ -765,7 +879,7 @@ class AssistantEngine:
         audio_b64 = None
         if self.voice_engine.is_enabled():
             try:
-                speech_text = clean_display.split("[MEDIA:")[0].strip()
+                speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
                 audio_b64 = self.voice_engine.generate_speech_base64(speech_text)
             except Exception as e:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")

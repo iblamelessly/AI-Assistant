@@ -303,6 +303,10 @@ class AssistantApi:
         """Reveals the given file or folder in Windows File Explorer."""
         return AssistantTools.reveal_in_explorer(file_path)
 
+    def open_document_file(self, file_path):
+        """Opens a presentation, Word document, or PDF directly in default OS application."""
+        return AssistantTools.open_file(file_path)
+
 
 def start_desktop_app():
     """Initializes and runs the Jarvis PyWebView desktop application with full autonomous agent capabilities."""

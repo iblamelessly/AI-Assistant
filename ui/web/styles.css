@@ -1518,3 +1518,163 @@ textarea, input {
   background-color: var(--bg-card-hover);
   color: var(--text-main);
 }
+
+/* ========================================================
+   CHAT DOCUMENT CARDS (PowerPoint, Word, PDF)
+   ======================================================== */
+.chat-document-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(15, 20, 30, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  max-width: 540px;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-document-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.chat-doc-icon-box {
+  width: 52px;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+}
+
+.chat-doc-big-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.chat-doc-format-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+/* Document Format Theme Badges */
+.chat-doc-icon-box.badge-pptx {
+  background: linear-gradient(135deg, rgba(234, 88, 12, 0.2) 0%, rgba(180, 83, 9, 0.3) 100%);
+  border-color: rgba(249, 115, 22, 0.45);
+  color: #fb923c;
+}
+
+.chat-doc-icon-box.badge-docx {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.2) 0%, rgba(29, 78, 216, 0.3) 100%);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #60a5fa;
+}
+
+.chat-doc-icon-box.badge-pdf {
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.2) 0%, rgba(185, 28, 28, 0.3) 100%);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #f87171;
+}
+
+.chat-doc-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-doc-header {
+  display: flex;
+  align-items: center;
+}
+
+.chat-doc-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  letter-spacing: 0.2px;
+}
+
+.chat-doc-badge.badge-pptx {
+  background: rgba(234, 88, 12, 0.15);
+  color: #fdba74;
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.chat-doc-badge.badge-docx {
+  background: rgba(37, 99, 235, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.chat-doc-badge.badge-pdf {
+  background: rgba(220, 38, 38, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.chat-doc-filename {
+  color: #f3f4f6;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.1px;
+}
+
+.chat-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-doc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e5e7eb;
+  transition: all 0.15s ease;
+}
+
+.btn-doc-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-doc-action.primary {
+  background: var(--accent-primary, #00d2ff);
+  border-color: transparent;
+  color: #050b14;
+  font-weight: 700;
+}
+
+.btn-doc-action.primary:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 4px 14px rgba(0, 210, 255, 0.35);
+}
+
