@@ -589,23 +589,32 @@ class AssistantTools:
                 p = Path(f_res[0]["path"])
         return media_editor.inspect_media(str(p))
 
+    _groq_client = None
+
+    @classmethod
+    def set_groq_client(cls, groq_client):
+        """Registers the active GroqClient for AI document structure synthesis."""
+        cls._groq_client = groq_client
+        from .document_generator import document_generator
+        document_generator.set_groq_client(groq_client)
+
     @classmethod
     def create_presentation(cls, topic: str, theme: str = "jarvis_dark", output_path: str = None) -> dict:
-        """Creates a professional 16:9 widescreen PowerPoint (.pptx) presentation."""
+        """Creates a professional 16:9 widescreen PowerPoint (.pptx) presentation with AI content synthesis."""
         from .document_generator import document_generator
-        return document_generator.create_presentation(topic, theme_name=theme or "jarvis_dark", output_path=output_path)
+        return document_generator.create_presentation(topic, theme_name=theme or "jarvis_dark", output_path=output_path, groq_client=cls._groq_client)
 
     @classmethod
     def create_document(cls, title: str, theme: str = "executive", output_path: str = None) -> dict:
         """Creates a professional Word (.docx) document with custom styling, callouts, and tables."""
         from .document_generator import document_generator
-        return document_generator.create_document(title, theme_name=theme or "executive", output_path=output_path)
+        return document_generator.create_document(title, theme_name=theme or "executive", output_path=output_path, groq_client=cls._groq_client)
 
     @classmethod
     def create_pdf(cls, title: str, theme: str = "modern_tech", output_path: str = None) -> dict:
         """Creates a publication-quality PDF (.pdf) report with executive layout and dynamic footers."""
         from .document_generator import document_generator
-        return document_generator.create_pdf(title, theme_name=theme or "modern_tech", output_path=output_path)
+        return document_generator.create_pdf(title, theme_name=theme or "modern_tech", output_path=output_path, groq_client=cls._groq_client)
 
     @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:

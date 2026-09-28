@@ -259,3 +259,83 @@ class GroqClient:
         err_msg = "⚠️ Vision analysis unavailable — no compatible vision model found on your Groq plan. Please check console.groq.com for available vision models."
         on_chunk(err_msg)
         return err_msg
+
+    def generate_document_structure(self, topic: str, doc_type: str = "pptx", max_tokens: int = 4096) -> dict | None:
+        """
+        Uses Groq LLM in JSON mode to generate rich, topic-specific document and slide outlines.
+        Produces 10-14 slides with comprehensive domain knowledge and structured document sections.
+        """
+        if not self.is_configured():
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        system_instruction = (
+            "You are JARVIS's executive presentation and technical documentation intelligence. "
+            "Generate an exhaustive, highly intellectual, domain-accurate document structure in JSON format. "
+            "Never provide generic placeholders or empty filler. Analyze the topic with actual facts, figures, "
+            "real architecture, formulas, frameworks, metrics, and case studies."
+        )
+
+        user_prompt = f"""
+Analyze the given topic and create a deep, comprehensive {doc_type.upper()} presentation and document outline in JSON.
+TOPIC: "{topic}"
+
+REQUIREMENTS:
+1. Provide a specific, compelling "title" and "subtitle".
+2. Create 10 to 14 "slides" covering:
+   - Slide 1: {{"type": "title", "title": "...", "subtitle": "...", "badge": "EXECUTIVE BRIEFING"}}
+   - Slide 2: {{"type": "agenda", "title": "Executive Overview & Roadmap", "subtitle": "Strategic trajectory and core domains", "cards": [{{"tag": "PART 01", "heading": "...", "desc": "..."}}, {{"tag": "PART 02", "heading": "...", "desc": "..."}}, {{"tag": "PART 03", "heading": "...", "desc": "..."}}, {{"tag": "PART 04", "heading": "...", "desc": "..."}}]}}
+   - Slides 3-5: {{"type": "cards", "title": "...", "subtitle": "...", "cards": [{{"tag": "...", "heading": "...", "desc": "..."}}, ...]}} (3 to 4 cards each explaining core principles, systems, components, or methodologies)
+   - Slides 6-8: {{"type": "split", "title": "...", "subtitle": "...", "left": {{"heading": "...", "text": "..."}}, "bullets": [["Lead 1", "Detailed description with facts"], ["Lead 2", "Detailed description"], ["Lead 3", "Detailed description"], ["Lead 4", "Detailed description"]]}}
+   - Slide 9: {{"type": "metrics", "title": "...", "subtitle": "...", "metrics": [{{"value": "...", "label": "...", "caption": "..."}}, {{"value": "...", "label": "...", "caption": "..."}}, {{"value": "...", "label": "...", "caption": "..."}}]}} (real statistics, speedups, benchmarks, or growth figures)
+   - Slides 10-11: Deep-dive architectures, real-world case studies, or technical workflows (using "cards" or "split")
+   - Slide 12: {{"type": "conclusion", "title": "Strategic Roadmap & Conclusion", "subtitle": "Key takeaways and forward horizons", "bullets": [["Milestone 1", "Actionable insight"], ["Milestone 2", "Actionable insight"], ["Milestone 3", "Actionable insight"]]}}
+
+3. Create 5 to 7 "document_sections" for Word/PDF reports:
+   - Section 1: {{"heading": "1. Executive Summary", "type": "callout", "text": "In-depth summary with strategic context."}}
+   - Section 2: {{"heading": "2. Foundational Architecture & Principles", "type": "paragraphs", "paragraphs": ["Detailed paragraph 1...", "Detailed paragraph 2..."]}}
+   - Section 3: {{"heading": "3. Comparative Analysis & Key Dimensions", "type": "table", "headers": ["Dimension", "Traditional Approach", "Modern / Target State", "Impact / Advantage"], "rows": [["...", "...", "...", "..."], ["...", "...", "...", "..."], ["...", "...", "...", "..."], ["...", "...", "...", "..."]]}}
+   - Section 4: {{"heading": "4. Implementation Methodology & Workflows", "type": "bullets", "bullets": [["Step 1", "Detailed execution methodology..."], ["Step 2", "..."], ["Step 3", "..."]]}}
+   - Section 5: {{"heading": "5. Empirical Impact & Risk Mitigation", "type": "paragraphs", "paragraphs": ["Analysis of metrics, risks, and mitigations..."]}}
+   - Section 6: {{"heading": "6. Conclusion & Strategic Directives", "type": "callout", "text": "Final synthesis and forward recommendations."}}
+
+Return ONLY a valid JSON object matching this schema. Do not include markdown formatting or extra text.
+"""
+
+        models_to_try = ["llama-3.3-70b-versatile", self.model, "qwen/qwen3.8-27b"]
+        seen_models = set()
+        for m in models_to_try:
+            if not m or m in seen_models:
+                continue
+            seen_models.add(m)
+            payload = {
+                "model": m,
+                "messages": [
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.5,
+                "max_tokens": max_tokens
+            }
+            try:
+                resp = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, timeout=45)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if raw_content:
+                        parsed = json.loads(raw_content)
+                        if isinstance(parsed, dict) and ("slides" in parsed or "document_sections" in parsed):
+                            return parsed
+                elif resp.status_code in [400, 404]:
+                    continue
+                else:
+                    pass
+            except Exception as e:
+                pass
+        return None
+

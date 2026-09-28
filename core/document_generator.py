@@ -370,6 +370,11 @@ class DocumentGenerator:
     def __init__(self):
         self.output_dir = Path(__file__).resolve().parent.parent / "documents" / "output"
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.groq_client = None
+
+    def set_groq_client(self, groq_client):
+        """Sets the GroqClient instance to enable deep topic-specific AI content synthesis."""
+        self.groq_client = groq_client
 
     def _clean_filename(self, title: str, extension: str) -> Path:
         slug = re.sub(r'[^a-zA-Z0-9_-]+', '_', title.lower()).strip('_')
@@ -509,10 +514,11 @@ class DocumentGenerator:
     # =========================================================================
     # 1. POWERPOINT PRESENTATION (.PPTX) GENERATOR
     # =========================================================================
-    def create_presentation(self, topic: str, slides_data: Optional[List[Dict[str, Any]]] = None, theme_name: str = "jarvis_dark", output_path: Optional[str] = None) -> Dict[str, Any]:
+    def create_presentation(self, topic: str, slides_data: Optional[List[Dict[str, Any]]] = None, theme_name: str = "jarvis_dark", output_path: Optional[str] = None, groq_client: Any = None) -> Dict[str, Any]:
         """
         Creates a high-impact, widescreen 16:9 PowerPoint presentation.
         Features modern card layouts, badges, colored accents, and distinct slide formats.
+        Synthesizes 10-14 topic-specific slides using Groq AI when available.
         """
         prs = Presentation()
         # Set 16:9 widescreen slide dimensions
@@ -530,11 +536,23 @@ class DocumentGenerator:
         color_muted = RGBColor(*theme["text_muted"])
         color_border = RGBColor(*theme["border"])
 
-        # Prepare content
+        # Prepare content: attempt AI topic synthesis first
         if not slides_data or len(slides_data) == 0:
-            synthesized = self._synthesize_content_structure(topic)
-            slides_list = synthesized["slides"]
-            main_title = synthesized["title"]
+            client = groq_client or self.groq_client
+            ai_data = None
+            if client and hasattr(client, "is_configured") and client.is_configured():
+                try:
+                    ai_data = client.generate_document_structure(topic, "pptx")
+                except Exception as e:
+                    print(f"[DocumentGenerator] AI slide generation error: {e}")
+
+            if ai_data and ai_data.get("slides") and len(ai_data["slides"]) > 0:
+                slides_list = ai_data["slides"]
+                main_title = ai_data.get("title", topic.strip().title())
+            else:
+                synthesized = self._synthesize_content_structure(topic)
+                slides_list = synthesized["slides"]
+                main_title = synthesized["title"]
         else:
             slides_list = slides_data
             main_title = topic.strip().title()
@@ -844,10 +862,11 @@ class DocumentGenerator:
     # =========================================================================
     # 2. WORD DOCUMENT (.DOCX) GENERATOR
     # =========================================================================
-    def create_document(self, title: str, sections: Optional[List[Dict[str, Any]]] = None, theme_name: str = "executive", output_path: Optional[str] = None) -> Dict[str, Any]:
+    def create_document(self, title: str, sections: Optional[List[Dict[str, Any]]] = None, theme_name: str = "executive", output_path: Optional[str] = None, groq_client: Any = None) -> Dict[str, Any]:
         """
         Creates a beautifully styled Word (.docx) document with custom headers,
         shaded callout boxes, styled data tables, and distinct typography.
+        Synthesizes deep, topic-specific sections using Groq AI when available.
         """
         doc = docx.Document()
         # Page Margins 1 inch
@@ -863,12 +882,25 @@ class DocumentGenerator:
         m_rgb = DocxRGBColor(*theme["text_muted"])
         c_rgb = DocxRGBColor(*theme["accent"])
 
-        # Prepare content
+        # Prepare content: attempt AI topic synthesis first
         if not sections or len(sections) == 0:
-            synthesized = self._synthesize_content_structure(title)
-            main_title = synthesized["title"]
-            subtitle = synthesized["subtitle"]
-            sections_list = synthesized["document_sections"]
+            client = groq_client or self.groq_client
+            ai_data = None
+            if client and hasattr(client, "is_configured") and client.is_configured():
+                try:
+                    ai_data = client.generate_document_structure(title, "docx")
+                except Exception as e:
+                    print(f"[DocumentGenerator] AI Word doc generation error: {e}")
+
+            if ai_data and ai_data.get("document_sections") and len(ai_data["document_sections"]) > 0:
+                main_title = ai_data.get("title", title.strip().title())
+                subtitle = ai_data.get("subtitle", "Strategic Analysis & Practical Framework")
+                sections_list = ai_data["document_sections"]
+            else:
+                synthesized = self._synthesize_content_structure(title)
+                main_title = synthesized["title"]
+                subtitle = synthesized["subtitle"]
+                sections_list = synthesized["document_sections"]
         else:
             main_title = title.strip().title()
             subtitle = "Strategic Analysis & Practical Framework"
@@ -1031,10 +1063,11 @@ class DocumentGenerator:
     # =========================================================================
     # 3. PDF REPORT (.PDF) GENERATOR
     # =========================================================================
-    def create_pdf(self, title: str, sections: Optional[List[Dict[str, Any]]] = None, theme_name: str = "modern_tech", output_path: Optional[str] = None) -> Dict[str, Any]:
+    def create_pdf(self, title: str, sections: Optional[List[Dict[str, Any]]] = None, theme_name: str = "modern_tech", output_path: Optional[str] = None, groq_client: Any = None) -> Dict[str, Any]:
         """
         Creates a publication-quality PDF report using ReportLab Platypus
         with custom palettes, formatted tables, colored callout boxes, and running footers.
+        Synthesizes deep, topic-specific sections using Groq AI when available.
         """
         save_target = Path(output_path) if output_path else self._clean_filename(title, "pdf")
         save_target.parent.mkdir(parents=True, exist_ok=True)
@@ -1136,12 +1169,25 @@ class DocumentGenerator:
 
         story = []
 
-        # Prepare Content
+        # Prepare Content: attempt AI topic synthesis first
         if not sections or len(sections) == 0:
-            synthesized = self._synthesize_content_structure(title)
-            main_title = synthesized["title"]
-            subtitle = synthesized["subtitle"]
-            sections_list = synthesized["document_sections"]
+            client = groq_client or self.groq_client
+            ai_data = None
+            if client and hasattr(client, "is_configured") and client.is_configured():
+                try:
+                    ai_data = client.generate_document_structure(title, "pdf")
+                except Exception as e:
+                    print(f"[DocumentGenerator] AI PDF generation error: {e}")
+
+            if ai_data and ai_data.get("document_sections") and len(ai_data["document_sections"]) > 0:
+                main_title = ai_data.get("title", title.strip().title())
+                subtitle = ai_data.get("subtitle", "Strategic Analysis & Practical Framework")
+                sections_list = ai_data["document_sections"]
+            else:
+                synthesized = self._synthesize_content_structure(title)
+                main_title = synthesized["title"]
+                subtitle = synthesized["subtitle"]
+                sections_list = synthesized["document_sections"]
         else:
             main_title = title.strip().title()
             subtitle = "Strategic Analysis & Practical Framework"

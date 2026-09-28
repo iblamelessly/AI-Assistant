@@ -34,6 +34,7 @@ class AssistantEngine:
             api_key=self.config_mgr.get("groq_api_key", ""),
             model=self.config_mgr.get("groq_model", "llama-3.3-70b-versatile")
         )
+        AssistantTools.set_groq_client(self.groq_client)
 
         self.provider = self.config_mgr.get("provider", "groq")
         self.ollama_model = self.config_mgr.get("ollama_model", "qwen3:1.7b")
@@ -55,6 +56,7 @@ class AssistantEngine:
     def set_groq_api_key(self, api_key: str):
         self.groq_client.set_api_key(api_key)
         self.config_mgr.set("groq_api_key", api_key)
+        AssistantTools.set_groq_client(self.groq_client)
 
     def get_installed_models(self):
         """Fetch available models based on active provider."""
