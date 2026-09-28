@@ -617,11 +617,20 @@ class AssistantTools:
         return document_generator.create_pdf(title, theme_name=theme or "modern_tech", output_path=output_path, groq_client=cls._groq_client)
 
     @classmethod
+    def generate_ai_image(cls, prompt: str, style: str = "") -> dict:
+        """Generates an AI image from a text prompt with optional style using FLUX/Pollinations."""
+        from .ai_image import ai_image_engine
+        return ai_image_engine.generate_image(prompt, style=style)
+
+    @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:
         """Unified dispatcher for tool execution."""
         t = tool_name.lower().strip()
         arg0 = args[0] if len(args) > 0 else ""
         arg1 = args[1] if len(args) > 1 else ""
+
+        if t in ["generate_ai_image", "generate_image", "create_image", "ai_image", "text_to_image"]:
+            return cls.generate_ai_image(arg0, arg1)
 
         if t in ["run_command", "run_shell_command", "terminal", "bash", "powershell", "shell"]:
             return cls.run_shell_command(arg0)

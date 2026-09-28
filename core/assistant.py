@@ -395,6 +395,27 @@ class AssistantEngine:
         if media_action:
             return media_action
 
+        # AI image generation (e.g. "generate an image of a futuristic city", "create a photo of a tiger")
+        ai_img_match = re.search(
+            r"^(?:please\s+)?(?:generate|create|make|draw|paint|render|imagine)\s+"
+            r"(?:an?\s+)?(?:ai\s+)?(?:image|photo|picture|illustration|artwork|painting|sketch|drawing|render)\s+"
+            r"(?:of\s+|about\s+|showing\s+|with\s+)?(.+)$",
+            msg, re.IGNORECASE
+        )
+        if not ai_img_match:
+            ai_img_match = re.search(r"^(?:ai\s+image|generate\s+image|text\s+to\s+image)\s+(?:of\s+)?(.+)$", msg, re.IGNORECASE)
+
+        if ai_img_match:
+            img_prompt = ai_img_match.group(1).strip()
+            # Extract style keyword if present
+            img_style = ""
+            for s in ["photorealistic", "photo", "anime", "cyberpunk", "3d", "sketch", "watercolor", "oil painting", "fantasy", "cinematic", "minimalist"]:
+                if re.search(rf"\b{re.escape(s)}\b", msg):
+                    img_style = s
+                    break
+            res = AssistantTools.generate_ai_image(img_prompt, style=img_style)
+            return {"tool": "generate_ai_image", "param": img_prompt, "result": res}
+
         # Git status
         if msg in ["git status", "check git status", "check my git", "git diff", "git log"]:
             cmd = "git status" if "diff" not in msg and "log" not in msg else msg
@@ -741,6 +762,8 @@ class AssistantEngine:
                     self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
                     if ext in [".pptx", ".docx", ".pdf"]:
                         resp_msg = f"{summary_text}\n\n[DOCUMENT: {ext[1:]} | {out_p}]\n\n[Suggestion: Open Document | Reveal in Folder | Create PDF | Create PPT]"
+                    elif mtype == "image":
+                        resp_msg = f"{summary_text}\n\n[MEDIA: image | {out_p}]\n\n[Suggestion: View Image | Open Folder | Make Anime Style | Make Cyberpunk]"
                     else:
                         resp_msg = f"{summary_text}\n\n[MEDIA: {mtype} | {out_p}]"
                 else:
