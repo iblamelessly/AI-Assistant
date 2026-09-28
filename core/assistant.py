@@ -173,6 +173,16 @@ class AssistantEngine:
 
         # --- IMAGE OPERATIONS ---
         if is_img:
+            # AI Style Transfer & Alterations (Cyberpunk, Anime, Sketch, Vintage, Oil Painting, HDR)
+            for kw in ["cyberpunk", "neon", "anime", "sketch", "pencil", "vintage", "retro", "oil painting", "noir", "sunset", "arctic", "vibrant", "enhance"]:
+                if re.search(rf"\b(?:make\s+it\s+|make\s+this\s+|turn\s+(?:this\s+)?into\s+|apply\s+|convert\s+to\s+)?{re.escape(kw)}\b", msg):
+                    if kw not in ["enhance"]:
+                        res = AssistantTools.alter_ai_image(target_path, kw)
+                        return {"tool": "alter_ai_image", "param": kw, "result": res}
+                    elif "enhance" in msg or "vibrant" in msg:
+                        res = AssistantTools.alter_ai_image(target_path, "enhance")
+                        return {"tool": "alter_ai_image", "param": "enhance", "result": res}
+
             if any(w in msg for w in ["black and white", "grayscale", "grey", "monochrome"]):
                 res = AssistantTools.edit_image(target_path, "filter", "grayscale")
                 return {"tool": "edit_image", "param": "grayscale", "result": res}

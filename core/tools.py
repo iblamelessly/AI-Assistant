@@ -623,6 +623,12 @@ class AssistantTools:
         return ai_image_engine.generate_image(prompt, style=style)
 
     @classmethod
+    def alter_ai_image(cls, image_path: str, instruction: str) -> dict:
+        """Alters an existing image using AI style transfer, neural filters, and color grading."""
+        from .ai_image import ai_image_engine
+        return ai_image_engine.alter_image(image_path, instruction)
+
+    @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:
         """Unified dispatcher for tool execution."""
         t = tool_name.lower().strip()
@@ -631,6 +637,8 @@ class AssistantTools:
 
         if t in ["generate_ai_image", "generate_image", "create_image", "ai_image", "text_to_image"]:
             return cls.generate_ai_image(arg0, arg1)
+        elif t in ["alter_ai_image", "alter_image", "style_transfer", "ai_filter"]:
+            return cls.alter_ai_image(arg0, arg1)
 
         if t in ["run_command", "run_shell_command", "terminal", "bash", "powershell", "shell"]:
             return cls.run_shell_command(arg0)
