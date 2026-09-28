@@ -780,7 +780,20 @@ class AssistantEngine:
         # 6. Stream from active provider (Groq or Ollama)
         full_response = ""
         if self.provider == "groq" and self.groq_client.is_configured():
-            full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
+            # Detect image attachments — route to vision model if any images present
+            image_paths = [
+                a["path"] for a in (attachments or [])
+                if a.get("type") == "image" and os.path.exists(a.get("path", ""))
+            ]
+            if image_paths:
+                # Vision Q&A — send actual image bytes to Groq's vision model
+                full_response = self.groq_client.stream_vision_chat(
+                    user_text=user_message,
+                    image_paths=image_paths,
+                    on_chunk=on_chunk
+                )
+            else:
+                full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
         else:
             # Fallback to local Ollama
             try:

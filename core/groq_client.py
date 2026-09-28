@@ -151,3 +151,111 @@ class GroqClient:
             err_msg = f"❌ Error during Groq streaming: {str(e)}"
             on_chunk(err_msg)
             return err_msg
+
+    def _do_stream(self, messages: list, on_chunk, model: str, max_tokens: int = 2048) -> str | None:
+        """Internal: attempts a streaming request with the given model. Returns None on 404."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        try:
+            response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
+            if response.status_code == 404:
+                return None  # Signal caller to try next model
+            if response.status_code == 401:
+                err_msg = "❌ Error: Invalid Groq API Key. Please check your key in Settings."
+                on_chunk(err_msg)
+                return err_msg
+            if response.status_code != 200:
+                err_msg = f"❌ Groq API Error ({response.status_code}): {response.text}"
+                on_chunk(err_msg)
+                return err_msg
+
+            full_content = ""
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                line_str = line.decode("utf-8") if isinstance(line, bytes) else line
+                if line_str.startswith("data: "):
+                    data_body = line_str[6:].strip()
+                    if data_body == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_body)
+                        choices = chunk.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                full_content += content
+                                on_chunk(content)
+                    except Exception:
+                        continue
+            return full_content
+        except Exception as e:
+            err_msg = f"❌ Error during streaming: {str(e)}"
+            on_chunk(err_msg)
+            return err_msg
+
+    def stream_vision_chat(self, user_text: str, image_paths: list, on_chunk, max_tokens: int = 2048) -> str:
+        """
+        Sends image(s) + user question to Groq's vision model and streams the answer.
+        Supports reading text from images, analyzing diagrams, solving visible problems.
+        Auto-falls back across vision-capable models if one returns 404.
+        """
+        if not self.is_configured():
+            err_msg = "⚠️ Groq API key is missing. Please enter your key in Settings."
+            on_chunk(err_msg)
+            return err_msg
+
+        import base64
+        import mimetypes
+
+        # Build vision content block
+        content = []
+        encoded_count = 0
+        for img_path in image_paths[:3]:   # max 3 images per request
+            try:
+                mime = mimetypes.guess_type(img_path)[0] or "image/jpeg"
+                with open(img_path, "rb") as f:
+                    b64_data = base64.b64encode(f.read()).decode("utf-8")
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64_data}"}
+                })
+                encoded_count += 1
+            except Exception as e:
+                print(f"[GroqClient] Could not encode image {img_path}: {e}")
+
+        if encoded_count == 0:
+            err_msg = "❌ Could not read any of the attached images. Please try uploading again."
+            on_chunk(err_msg)
+            return err_msg
+
+        content.append({
+            "type": "text",
+            "text": user_text if user_text.strip() else "Please describe this image in detail."
+        })
+        messages = [{"role": "user", "content": content}]
+
+        # Try vision models in priority order (auto-fallback on 404)
+        VISION_MODELS = [
+            "meta-llama/llama-4-scout-17b-16e-instruct",
+            "llama-3.2-90b-vision-preview",
+            "llama-3.2-11b-vision-preview",
+        ]
+        for model in VISION_MODELS:
+            print(f"[GroqClient] Trying vision model: {model}")
+            result = self._do_stream(messages, on_chunk, model, max_tokens)
+            if result is not None:
+                return result
+
+        err_msg = "⚠️ Vision analysis unavailable — no compatible vision model found on your Groq plan. Please check console.groq.com for available vision models."
+        on_chunk(err_msg)
+        return err_msg
