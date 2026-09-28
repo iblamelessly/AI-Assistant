@@ -39,6 +39,39 @@ class AppLauncher:
         "notion": "https://www.notion.so"
     }
 
+    # Platforms that support deep search URLs (query appended to URL)
+    SEARCHABLE_WEB_SERVICES = {
+        "youtube":   "https://www.youtube.com/results?search_query={query}",
+        "google":    "https://www.google.com/search?q={query}",
+        "bing":      "https://www.bing.com/search?q={query}",
+        "reddit":    "https://www.reddit.com/search/?q={query}",
+        "github":    "https://github.com/search?q={query}",
+        "amazon":    "https://www.amazon.com/s?k={query}",
+        "linkedin":  "https://www.linkedin.com/search/results/all/?keywords={query}",
+        "spotify":   "https://open.spotify.com/search/{query}",
+        "twitter":   "https://twitter.com/search?q={query}",
+        "x":         "https://x.com/search?q={query}",
+        "instagram": "https://www.instagram.com/explore/search/?q={query}",
+        "pinterest": "https://www.pinterest.com/search/pins/?q={query}",
+        "stackoverflow": "https://stackoverflow.com/search?q={query}",
+        "wikipedia": "https://en.wikipedia.org/wiki/Special:Search?search={query}",
+        "flipkart":  "https://www.flipkart.com/search?q={query}",
+        "myntra":    "https://www.myntra.com/{query}",
+    }
+
+    # Aliases for platform names in natural speech
+    SEARCH_PLATFORM_ALIASES = {
+        "you tube": "youtube",  "yt": "youtube",  "utube": "youtube",
+        "goog": "google",  "googl": "google",
+        "git hub": "github",  "gh": "github",
+        "stack overflow": "stackoverflow",  "stackoverflow": "stackoverflow",  "stack": "stackoverflow",
+        "wiki": "wikipedia",  "wikipedia": "wikipedia",
+        "amz": "amazon",
+        "insta": "instagram",
+        "pinterest": "pinterest",  "pin": "pinterest",
+        "twit": "twitter",  "tw": "twitter",
+    }
+
     APP_ALIASES = {
         "chrome": ["Google Chrome", "chrome"],
         "google chrome": ["Google Chrome"],
@@ -341,6 +374,52 @@ class AppLauncher:
                 return {"success": True, "app": app_info.get("name", "App"), "summary": f"Launched {app_info.get('name')}."}
             except Exception as e2:
                 return {"success": False, "error": str(e), "summary": f"Failed to launch {app_info.get('name')}: {e}"}
+
+    def build_search_url(self, platform: str, query: str) -> str:
+        """Builds a direct search URL for the given platform and query."""
+        from urllib.parse import quote_plus
+        p = platform.lower().strip()
+        # Resolve aliases
+        p = self.SEARCH_PLATFORM_ALIASES.get(p, p)
+        url_template = self.SEARCHABLE_WEB_SERVICES.get(p)
+        if not url_template:
+            return ""
+        return url_template.replace("{query}", quote_plus(query))
+
+    def resolve_and_search(self, platform: str, query: str) -> dict:
+        """
+        Opens the given platform with the search query directly.
+        Returns a result dict with success/summary.
+        """
+        from urllib.parse import quote_plus
+        p = platform.lower().strip()
+        # Resolve aliases
+        p = self.SEARCH_PLATFORM_ALIASES.get(p, p)
+        url_template = self.SEARCHABLE_WEB_SERVICES.get(p)
+        if not url_template:
+            return {
+                "success": False,
+                "summary": f"Platform '{platform}' does not support direct search.",
+                "action": "web_search"
+            }
+        search_url = url_template.replace("{query}", quote_plus(query))
+        try:
+            webbrowser.open(search_url)
+            platform_title = p.replace("_", " ").title()
+            return {
+                "success": True,
+                "platform": platform_title,
+                "query": query,
+                "url": search_url,
+                "action": "web_search",
+                "summary": f"Searching **{platform_title}** for **\"{query}\"** — opened in browser."
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "summary": f"Failed to open search in {platform}: {e}"
+            }
 
     def resolve_and_launch(self, raw_query: str) -> dict:
         """

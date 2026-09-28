@@ -420,6 +420,27 @@ class AssistantEngine:
             res = AssistantTools.get_system_stats()
             return {"tool": "get_system_stats", "result": res}
 
+        # Platform-specific deep search (YouTube, Google, Reddit, GitHub, Amazon, Spotify, etc.)
+        # Patterns: "search youtube for lo-fi music", "youtube search python tutorials", "play on spotify chill beats"
+        search_match = re.search(
+            r"(?:search|look\s+up|find|play|show)\s+"
+            r"(?:on\s+|in\s+|for\s+on\s+|through\s+|via\s+)?"
+            r"(youtube|you\s*tube|yt|google|bing|reddit|github|git\s*hub|amazon|amz|linkedin|"
+            r"spotify|twitter|x|instagram|insta|pinterest|pin|stackoverflow|stack|wikipedia|wiki|flipkart|myntra)"
+            r"(?:\s+for|\s+about)?\s+(.+)"
+            r"|"
+            r"(youtube|you\s*tube|yt|google|bing|reddit|github|git\s*hub|amazon|amz|linkedin|"
+            r"spotify|twitter|x|instagram|insta|pinterest|pin|stackoverflow|stack|wikipedia|wiki|flipkart|myntra)"
+            r"\s+(?:search|find|look\s+up|play|show)\s+(?:for\s+|about\s+)?(.+)",
+            msg, re.IGNORECASE
+        )
+        if search_match:
+            platform_raw = (search_match.group(1) or search_match.group(3) or "").strip()
+            query_raw = (search_match.group(2) or search_match.group(4) or "").strip()
+            if platform_raw and query_raw and len(query_raw) > 1:
+                result = app_launcher.resolve_and_search(platform_raw, query_raw)
+                return {"tool": "web_search", "param": query_raw, "result": result}
+
         # File & Folder Intent Detection (e.g. "find my python file main.py", "open downloads folder", "where is test.py")
         parsed_q = file_search_engine.parse_query(msg)
         is_file_folder_query = (
