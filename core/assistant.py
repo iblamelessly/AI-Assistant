@@ -426,6 +426,21 @@ class AssistantEngine:
             res = AssistantTools.generate_ai_image(img_prompt, style=img_style)
             return {"tool": "generate_ai_image", "param": img_prompt, "result": res}
 
+        # AI video generation (e.g. "generate a video about solar system", "create an ai video on deep sea", "make a video of...")
+        ai_vid_match = re.search(
+            r"^(?:please\s+)?(?:generate|create|make|produce|render)\s+"
+            r"(?:an?\s+)?(?:ai\s+)?(?:video|clip|movie|slideshow|short film)\s+"
+            r"(?:of\s+|about\s+|on\s+|showing\s+|with\s+)?(.+)$",
+            msg, re.IGNORECASE
+        )
+        if not ai_vid_match:
+            ai_vid_match = re.search(r"^(?:ai\s+video|text\s+to\s+video|make\s+video)\s+(?:of\s+|on\s+|about\s+)?(.+)$", msg, re.IGNORECASE)
+
+        if ai_vid_match:
+            vid_prompt = ai_vid_match.group(1).strip()
+            res = AssistantTools.generate_ai_video(vid_prompt)
+            return {"tool": "generate_ai_video", "param": vid_prompt, "result": res}
+
         # Git status
         if msg in ["git status", "check git status", "check my git", "git diff", "git log"]:
             cmd = "git status" if "diff" not in msg and "log" not in msg else msg
@@ -774,6 +789,8 @@ class AssistantEngine:
                         resp_msg = f"{summary_text}\n\n[DOCUMENT: {ext[1:]} | {out_p}]\n\n[Suggestion: Open Document | Reveal in Folder | Create PDF | Create PPT]"
                     elif mtype == "image":
                         resp_msg = f"{summary_text}\n\n[MEDIA: image | {out_p}]\n\n[Suggestion: View Image | Open Folder | Make Anime Style | Make Cyberpunk]"
+                    elif mtype == "video":
+                        resp_msg = f"{summary_text}\n\n[MEDIA: video | {out_p}]\n\n[Suggestion: Play Video | Open Folder | Generate Another Video | Create Presentation]"
                     else:
                         resp_msg = f"{summary_text}\n\n[MEDIA: {mtype} | {out_p}]"
                 else:
