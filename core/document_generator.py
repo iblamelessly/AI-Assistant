@@ -33,38 +33,301 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.pdfgen import canvas
 
 
-# Document Theme Color Palettes
+# Document Theme Color Palettes — 20 Professional Themes
 THEMES = {
+    # ── DARK THEMES ──────────────────────────────────────────────────────────
     "jarvis_dark": {
-        "bg": (13, 13, 13),           # #0D0D0D
-        "card_bg": (26, 26, 26),      # #1A1A1A
-        "primary": (16, 163, 127),     # #10A37F (Jarvis Green)
-        "secondary": (14, 140, 109),   # #0E8C6D
-        "accent": (56, 189, 248),      # #38BDF8 (Sky Blue)
-        "text_main": (245, 245, 245),  # #F5F5F5
-        "text_muted": (180, 180, 180), # #B4B4B4
-        "border": (46, 46, 46),       # #2E2E2E
+        "bg": (11, 15, 25),            # #0B0F19
+        "card_bg": (18, 24, 38),       # #121826
+        "primary": (0, 210, 255),      # #00D2FF (Cyan)
+        "secondary": (129, 140, 248),  # #818CF8 (Indigo)
+        "accent": (16, 185, 129),      # #10B981 (Emerald)
+        "text_main": (241, 245, 249),  # #F1F5F9
+        "text_muted": (148, 163, 184), # #94A3B8
+        "border": (30, 41, 59),        # #1E293B
+    },
+    "midnight_blue": {
+        "bg": (11, 17, 32),            # #0B1120
+        "card_bg": (19, 28, 52),       # #131C34
+        "primary": (29, 78, 216),      # #1D4ED8 (Royal blue)
+        "secondary": (251, 191, 36),   # #FBBF24 (Gold)
+        "accent": (99, 102, 241),      # #6366F1 (Violet)
+        "text_main": (239, 246, 255),  # #EFF6FF
+        "text_muted": (147, 197, 253), # #93C5FD
+        "border": (30, 58, 138),       # #1E3A8A
+    },
+    "obsidian": {
+        "bg": (17, 17, 17),            # #111111
+        "card_bg": (28, 28, 30),       # #1C1C1E
+        "primary": (108, 99, 255),     # #6C63FF (Violet)
+        "secondary": (232, 121, 249),  # #E879F9 (Fuchsia)
+        "accent": (251, 191, 36),      # #FBBF24 (Gold)
+        "text_main": (245, 245, 247),  # #F5F5F7
+        "text_muted": (174, 174, 178), # #AEAEB2
+        "border": (44, 44, 46),        # #2C2C2E
+    },
+    "cyberpunk": {
+        "bg": (13, 2, 33),             # #0D0221
+        "card_bg": (22, 8, 50),        # #160832
+        "primary": (225, 29, 72),      # #E11D48 (Hot pink)
+        "secondary": (253, 224, 71),   # #FDE047 (Neon yellow)
+        "accent": (0, 229, 255),       # #00E5FF (Electric cyan)
+        "text_main": (255, 245, 255),  # #FFF5FF
+        "text_muted": (216, 180, 254), # #D8B4FE
+        "border": (76, 29, 149),       # #4C1D95
+    },
+    "aurora": {
+        "bg": (5, 10, 8),              # #050A08
+        "card_bg": (10, 20, 15),       # #0A140F
+        "primary": (5, 150, 105),      # #059669 (Emerald)
+        "secondary": (45, 212, 191),   # #2DD4BF (Teal)
+        "accent": (163, 230, 53),      # #A3E635 (Lime)
+        "text_main": (240, 253, 244),  # #F0FDF4
+        "text_muted": (134, 239, 172), # #86EFAC
+        "border": (6, 78, 59),         # #064E3B
+    },
+    "deep_space": {
+        "bg": (6, 8, 15),              # #06080F
+        "card_bg": (12, 15, 28),       # #0C0F1C
+        "primary": (67, 56, 202),      # #4338CA (Indigo)
+        "secondary": (103, 232, 249),  # #67E8F9 (Sky cyan)
+        "accent": (167, 139, 250),     # #A78BFA (Purple)
+        "text_main": (238, 242, 255),  # #EEF2FF
+        "text_muted": (165, 180, 252), # #A5B4FC
+        "border": (49, 46, 129),       # #312E81
+    },
+    "volcanic": {
+        "bg": (22, 10, 0),             # #160A00
+        "card_bg": (38, 18, 5),        # #261205
+        "primary": (234, 88, 12),      # #EA580C (Burnt orange)
+        "secondary": (252, 211, 77),   # #FCD34D (Flame gold)
+        "accent": (239, 68, 68),       # #EF4444 (Red)
+        "text_main": (255, 247, 237),  # #FFF7ED
+        "text_muted": (253, 186, 116), # #FDBA74
+        "border": (124, 45, 18),       # #7C2D12
+    },
+    # ── LIGHT / CLEAN THEMES ─────────────────────────────────────────────────
+    "minimal_white": {
+        "bg": (255, 255, 255),         # #FFFFFF
+        "card_bg": (249, 250, 251),    # #F9FAFB
+        "primary": (15, 23, 42),       # #0F172A (Charcoal)
+        "secondary": (14, 165, 233),   # #0EA5E9 (Sky blue)
+        "accent": (16, 185, 129),      # #10B981 (Teal)
+        "text_main": (15, 23, 42),     # #0F172A
+        "text_muted": (107, 114, 128), # #6B7280
+        "border": (229, 231, 235),     # #E5E7EB
+    },
+    "soft_pearl": {
+        "bg": (250, 249, 247),         # #FAF9F7
+        "card_bg": (255, 255, 255),    # #FFFFFF
+        "primary": (30, 41, 59),       # #1E293B (Dark navy)
+        "secondary": (244, 63, 94),    # #F43F5E (Coral rose)
+        "accent": (251, 146, 60),      # #FB923C (Warm orange)
+        "text_main": (15, 23, 42),     # #0F172A
+        "text_muted": (100, 116, 139), # #64748B
+        "border": (226, 232, 240),     # #E2E8F0
+    },
+    "corporate_blue": {
+        "bg": (255, 255, 255),         # #FFFFFF
+        "card_bg": (239, 246, 255),    # #EFF6FF
+        "primary": (30, 58, 95),       # #1E3A5F (Deep navy)
+        "secondary": (37, 99, 235),    # #2563EB (Corporate blue)
+        "accent": (6, 182, 212),       # #06B6D4 (Cyan)
+        "text_main": (15, 23, 42),     # #0F172A
+        "text_muted": (71, 85, 105),   # #475569
+        "border": (191, 219, 254),     # #BFDBFE
+    },
+    "executive": {
+        "bg": (255, 255, 255),         # #FFFFFF
+        "card_bg": (248, 249, 250),    # #F8F9FA
+        "primary": (30, 41, 59),       # #1E293B
+        "secondary": (217, 119, 6),    # #D97706 (Amber gold)
+        "accent": (13, 148, 136),      # #0D9488 (Teal)
+        "text_main": (30, 41, 59),     # #1E293B
+        "text_muted": (107, 114, 128), # #6B7280
+        "border": (229, 231, 235),     # #E5E7EB
     },
     "modern_tech": {
-        "bg": (248, 250, 252),        # #F8FAFC
+        "bg": (248, 250, 252),         # #F8FAFC
         "card_bg": (255, 255, 255),    # #FFFFFF
         "primary": (15, 23, 42),       # #0F172A (Navy slate)
         "secondary": (2, 132, 199),    # #0284C7 (Electric cyan)
         "accent": (79, 70, 229),       # #4F46E5 (Indigo)
         "text_main": (15, 23, 42),     # #0F172A
         "text_muted": (100, 116, 139), # #64748B
-        "border": (226, 232, 240),    # #E2E8F0
+        "border": (226, 232, 240),     # #E2E8F0
     },
-    "executive": {
-        "bg": (255, 255, 255),        # #FFFFFF
-        "card_bg": (248, 249, 250),    # #F8F9FA
-        "primary": (30, 41, 59),       # #1E293B
-        "secondary": (217, 119, 6),    # #D97706 (Amber/Gold)
-        "accent": (13, 148, 136),      # #0D9488 (Teal)
-        "text_main": (30, 41, 59),     # #1E293B
-        "text_muted": (107, 114, 128), # #6B7280
-        "border": (229, 231, 235),    # #E5E7EB
-    }
+    "arctic": {
+        "bg": (239, 246, 255),         # #EFF6FF
+        "card_bg": (255, 255, 255),    # #FFFFFF
+        "primary": (30, 58, 95),       # #1E3A5F (Navy)
+        "secondary": (6, 182, 212),    # #06B6D4 (Cyan)
+        "accent": (56, 189, 248),      # #38BDF8 (Sky)
+        "text_main": (15, 23, 42),     # #0F172A
+        "text_muted": (71, 85, 105),   # #475569
+        "border": (186, 230, 253),     # #BAE6FD
+    },
+    # ── CREATIVE / SIGNATURE THEMES ──────────────────────────────────────────
+    "ocean_blue": {
+        "bg": (12, 27, 46),            # #0C1B2E
+        "card_bg": (17, 38, 64),       # #112640
+        "primary": (3, 105, 161),      # #0369A1 (Ocean blue)
+        "secondary": (34, 211, 238),   # #22D3EE (Aqua)
+        "accent": (251, 191, 36),      # #FBBF24 (Gold)
+        "text_main": (240, 249, 255),  # #F0F9FF
+        "text_muted": (125, 211, 252), # #7DD3FC
+        "border": (7, 89, 133),        # #075985
+    },
+    "forest": {
+        "bg": (10, 31, 10),            # #0A1F0A
+        "card_bg": (16, 42, 16),       # #102A10
+        "primary": (22, 163, 74),      # #16A34A (Forest green)
+        "secondary": (202, 138, 4),    # #CA8A04 (Gold)
+        "accent": (45, 212, 191),      # #2DD4BF (Teal)
+        "text_main": (240, 253, 244),  # #F0FDF4
+        "text_muted": (134, 239, 172), # #86EFAC
+        "border": (20, 83, 45),        # #14532D
+    },
+    "sunset": {
+        "bg": (28, 10, 0),             # #1C0A00
+        "card_bg": (44, 16, 5),        # #2C1005
+        "primary": (220, 38, 38),      # #DC2626 (Crimson red)
+        "secondary": (249, 115, 22),   # #F97316 (Orange)
+        "accent": (251, 191, 36),      # #FBBF24 (Amber)
+        "text_main": (255, 247, 237),  # #FFF7ED
+        "text_muted": (253, 186, 116), # #FDBA74
+        "border": (154, 52, 18),       # #9A3412
+    },
+    "royal_purple": {
+        "bg": (18, 11, 31),            # #120B1F
+        "card_bg": (30, 18, 52),       # #1E1234
+        "primary": (124, 58, 237),     # #7C3AED (Violet)
+        "secondary": (236, 72, 153),   # #EC4899 (Pink)
+        "accent": (251, 191, 36),      # #FBBF24 (Gold)
+        "text_main": (245, 243, 255),  # #F5F3FF
+        "text_muted": (196, 181, 253), # #C4B5FD
+        "border": (76, 29, 149),       # #4C1D95
+    },
+    "rose_gold": {
+        "bg": (255, 240, 245),         # #FFF0F5
+        "card_bg": (255, 255, 255),    # #FFFFFF
+        "primary": (159, 18, 57),      # #9F1239 (Deep rose)
+        "secondary": (217, 119, 6),    # #D97706 (Champagne gold)
+        "accent": (236, 72, 153),      # #EC4899 (Pink)
+        "text_main": (28, 10, 23),     # #1C0A17
+        "text_muted": (161, 98, 132),  # #A16284
+        "border": (251, 207, 232),     # #FBCFE8
+    },
+    "emerald_pro": {
+        "bg": (6, 18, 17),             # #061211
+        "card_bg": (10, 30, 28),       # #0A1E1C
+        "primary": (13, 148, 136),     # #0D9488 (Teal)
+        "secondary": (132, 204, 22),   # #84CC16 (Lime)
+        "accent": (45, 212, 191),      # #2DD4BF (Aqua teal)
+        "text_main": (240, 253, 250),  # #F0FDFA
+        "text_muted": (94, 234, 212),  # #5EEAD4
+        "border": (19, 78, 74),        # #134E4A
+    },
+    "monochrome": {
+        "bg": (0, 0, 0),               # #000000
+        "card_bg": (18, 18, 18),       # #121212
+        "primary": (55, 65, 81),       # #374151 (Dark grey)
+        "secondary": (107, 114, 128),  # #6B7280 (Grey)
+        "accent": (209, 213, 219),     # #D1D5DB (Light grey)
+        "text_main": (255, 255, 255),  # #FFFFFF
+        "text_muted": (156, 163, 175), # #9CA3AF
+        "border": (31, 41, 55),        # #1F2937
+    },
+    "cherry_blossom": {
+        "bg": (255, 240, 245),         # #FFF0F5
+        "card_bg": (255, 255, 255),    # #FFFFFF
+        "primary": (159, 18, 57),      # #9F1239 (Deep cherry)
+        "secondary": (236, 72, 153),   # #EC4899 (Blossom pink)
+        "accent": (217, 119, 6),       # #D97706 (Warm gold)
+        "text_main": (28, 10, 23),     # #1C0A17
+        "text_muted": (190, 24, 93),   # #BE185D
+        "border": (253, 164, 175),     # #FDA4AF
+    },
+}
+
+# Natural language → theme_name alias map
+THEME_ALIASES = {
+    # jarvis_dark
+    "dark": "jarvis_dark",          "jarvis": "jarvis_dark",       "ai": "jarvis_dark",
+    "black": "jarvis_dark",         "teal": "jarvis_dark",
+    # midnight_blue
+    "midnight": "midnight_blue",    "midnight blue": "midnight_blue",
+    "navy": "midnight_blue",        "dark blue": "midnight_blue",   "royal blue": "midnight_blue",
+    # obsidian
+    "obsidian": "obsidian",         "charcoal": "obsidian",        "violet": "obsidian",
+    # cyberpunk
+    "cyber": "cyberpunk",           "cyberpunk": "cyberpunk",      "neon": "cyberpunk",
+    "glitch": "cyberpunk",          "purple": "cyberpunk",         "magenta": "cyberpunk",
+    # aurora
+    "aurora": "aurora",             "green": "aurora",             "emerald dark": "aurora",
+    "dark green": "aurora",
+    # deep_space
+    "space": "deep_space",          "galaxy": "deep_space",        "deep space": "deep_space",
+    "indigo": "deep_space",         "cosmos": "deep_space",
+    # volcanic
+    "volcanic": "volcanic",         "fire": "volcanic",            "lava": "volcanic",
+    "orange": "volcanic",           "inferno": "volcanic",
+    # minimal_white
+    "white": "minimal_white",       "minimal": "minimal_white",    "clean": "minimal_white",
+    "light": "minimal_white",       "simple": "minimal_white",     "plain": "minimal_white",
+    # soft_pearl
+    "cream": "soft_pearl",          "pearl": "soft_pearl",         "warm": "soft_pearl",
+    "ivory": "soft_pearl",
+    # corporate_blue
+    "corporate": "corporate_blue",  "business": "corporate_blue",  "formal": "corporate_blue",
+    "professional": "corporate_blue",
+    # executive
+    "gold": "executive",            "executive": "executive",      "luxury": "executive",
+    "premium": "executive",         "elite": "executive",
+    # modern_tech
+    "tech": "modern_tech",          "modern": "modern_tech",       "slate": "modern_tech",
+    "digital": "modern_tech",       "startup": "modern_tech",
+    # arctic
+    "arctic": "arctic",             "ice": "arctic",               "cool": "arctic",
+    "winter": "arctic",             "frost": "arctic",
+    # ocean_blue
+    "ocean": "ocean_blue",          "blue": "ocean_blue",          "sea": "ocean_blue",
+    "aqua": "ocean_blue",           "marine": "ocean_blue",        "nautical": "ocean_blue",
+    # forest
+    "forest": "forest",             "nature": "forest",            "jungle": "forest",
+    "earth": "forest",
+    # sunset
+    "sunset": "sunset",             "red": "sunset",               "coral": "sunset",
+    "dusk": "sunset",               "twilight": "sunset",
+    # royal_purple
+    "royal": "royal_purple",        "deep purple": "royal_purple", "majestic": "royal_purple",
+    "regal": "royal_purple",        "grape": "royal_purple",
+    # rose_gold
+    "rose": "rose_gold",            "rose gold": "rose_gold",      "pink": "rose_gold",
+    "blush": "rose_gold",           "feminine": "rose_gold",
+    # emerald_pro
+    "emerald": "emerald_pro",       "jade": "emerald_pro",         "lime": "emerald_pro",
+    "mint": "emerald_pro",
+    # monochrome
+    "mono": "monochrome",           "monochrome": "monochrome",    "grey": "monochrome",
+    "gray": "monochrome",           "grayscale": "monochrome",     "black and white": "monochrome",
+    # cherry_blossom
+    "cherry": "cherry_blossom",     "blossom": "cherry_blossom",   "sakura": "cherry_blossom",
+    "floral": "cherry_blossom",
+}
+
+THEME_DISPLAY_NAMES = {
+    "jarvis_dark":    "JARVIS Dark",       "midnight_blue":  "Midnight Blue",
+    "obsidian":       "Obsidian",          "cyberpunk":      "Cyberpunk",
+    "aurora":         "Aurora",            "deep_space":     "Deep Space",
+    "volcanic":       "Volcanic",          "minimal_white":  "Minimal White",
+    "soft_pearl":     "Soft Pearl",        "corporate_blue": "Corporate Blue",
+    "executive":      "Executive Gold",    "modern_tech":    "Modern Tech",
+    "arctic":         "Arctic",            "ocean_blue":     "Ocean Blue",
+    "forest":         "Forest",            "sunset":         "Sunset",
+    "royal_purple":   "Royal Purple",      "rose_gold":      "Rose Gold",
+    "emerald_pro":    "Emerald Pro",       "monochrome":     "Monochrome",
+    "cherry_blossom": "Cherry Blossom",
 }
 
 

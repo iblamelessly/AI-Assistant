@@ -252,6 +252,37 @@ class AssistantEngine:
 
         return None
 
+    def _extract_theme_from_message(self, raw_msg: str):
+        """
+        Extracts a theme name from natural language.
+        Returns (theme_key, cleaned_message_with_theme_words_removed).
+        Examples:
+          'create a cyberpunk ppt on robotics'  -> ('cyberpunk', 'create a ppt on robotics')
+          'make a midnight blue presentation'   -> ('midnight_blue', 'make a presentation')
+          'generate a ppt on AI'                -> ('jarvis_dark', 'generate a ppt on AI')  [default]
+        """
+        from .document_generator import THEME_ALIASES
+        msg_lower = raw_msg.lower()
+
+        # Sort aliases longest-first so multi-word aliases ("deep space", "rose gold") match before single words
+        sorted_aliases = sorted(THEME_ALIASES.keys(), key=len, reverse=True)
+
+        for alias in sorted_aliases:
+            pattern = rf'\b{re.escape(alias)}\b'
+            if re.search(pattern, msg_lower):
+                theme_key = THEME_ALIASES[alias]
+                # Strip the alias + optional suffix words (theme/style/template/design/color/palette/look/mode)
+                cleaned = re.sub(
+                    rf'(?:with\s+|using\s+|in\s+|use\s+|a\s+|an\s+)?{re.escape(alias)}'
+                    rf'(?:\s+(?:theme|style|template|design|color|palette|look|mode|aesthetic))?\s*',
+                    ' ', raw_msg, flags=re.IGNORECASE
+                ).strip()
+                # Collapse multiple spaces
+                cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip()
+                return (theme_key, cleaned)
+
+        return ("jarvis_dark", raw_msg)  # default theme
+
     def _detect_document_intent(self, msg: str, raw_msg: str):
         """Detects PowerPoint, Word, or PDF creation requests on the fast path."""
         # 0. Open existing latest document
@@ -285,54 +316,65 @@ class AssistantEngine:
                     return m2.group(1).strip().strip("\"'")
             return None
 
+        # Extract theme from message FIRST so topic extraction gets clean text
+        theme_name, theme_cleaned_msg = self._extract_theme_from_message(raw_msg)
+        from .document_generator import THEME_DISPLAY_NAMES
+        theme_display = THEME_DISPLAY_NAMES.get(theme_name, theme_name.replace("_", " ").title())
+
         # 1. PowerPoint / Presentation / PPT / Slides
         if any(re.search(rf"\b{k}\b", msg) for k in ["presentation", "powerpoint", "ppt", "pptx", "slides", "slide deck"]):
-            topic = extract_topic(raw_msg, ["presentation", "powerpoint", "pptx", "ppt", "slides", "slide deck"])
+            topic = extract_topic(theme_cleaned_msg, ["presentation", "powerpoint", "pptx", "ppt", "slides", "slide deck"])
             if not topic:
                 for k in ["presentation", "powerpoint", "pptx", "ppt", "slides"]:
                     if re.search(rf"\b{k}\b", msg):
-                        cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", raw_msg, flags=re.IGNORECASE).strip()
+                        cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", theme_cleaned_msg, flags=re.IGNORECASE).strip()
                         cleaned = re.sub(r"^(?:on|about|for|regarding)\s+", "", cleaned, flags=re.IGNORECASE).strip()
                         if cleaned:
                             topic = cleaned
                             break
             if topic:
                 topic = re.sub(r"^(?:a|an|the|some)\s+", "", topic, flags=re.IGNORECASE).strip()
-                res = AssistantTools.create_presentation(topic)
+                res = AssistantTools.create_presentation(topic, theme=theme_name)
+                if res.get("success"):
+                    res["summary"] = f"Created **{theme_display}**-themed 16:9 PowerPoint: '{res.get('output_path','').split(chr(92))[-1]}' with {res.get('slides_count', 6)} slides."
                 return {"tool": "create_presentation", "param": topic, "result": res}
 
         # 2. Word Document (.docx)
         word_keywords = ["word document", "word doc", "word file", "docx", "word report"]
         if any(k in msg for k in word_keywords):
-            topic = extract_topic(raw_msg, word_keywords)
+            topic = extract_topic(theme_cleaned_msg, word_keywords)
             if not topic:
                 for k in word_keywords:
                     if k in msg:
-                        cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", raw_msg, flags=re.IGNORECASE).strip()
+                        cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", theme_cleaned_msg, flags=re.IGNORECASE).strip()
                         cleaned = re.sub(r"^(?:on|about|for|regarding)\s+", "", cleaned, flags=re.IGNORECASE).strip()
                         if cleaned:
                             topic = cleaned
                             break
             if topic:
                 topic = re.sub(r"^(?:a|an|the|some)\s+", "", topic, flags=re.IGNORECASE).strip()
-                res = AssistantTools.create_document(topic)
+                res = AssistantTools.create_document(topic, theme=theme_name)
+                if res.get("success"):
+                    res["summary"] = f"Created **{theme_display}**-styled Word document: '{res.get('output_path','').split(chr(92))[-1]}'."
                 return {"tool": "create_document", "param": topic, "result": res}
 
         # 3. PDF Document / Report (.pdf)
         if any(re.search(rf"\b{k}\b", msg) for k in ["pdf report", "pdf document", "pdf file", "pdf"]):
             if "search" not in msg and "find" not in msg:
-                topic = extract_topic(raw_msg, ["pdf report", "pdf document", "pdf file", "pdf"])
+                topic = extract_topic(theme_cleaned_msg, ["pdf report", "pdf document", "pdf file", "pdf"])
                 if not topic:
                     for k in ["pdf report", "pdf document", "pdf file", "pdf"]:
                         if re.search(rf"\b{k}\b", msg):
-                            cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", raw_msg, flags=re.IGNORECASE).strip()
+                            cleaned = re.sub(rf"\b(?:create|make|generate|build|prepare)?\s*(?:a|an)?\s*{k}\b", "", theme_cleaned_msg, flags=re.IGNORECASE).strip()
                             cleaned = re.sub(r"^(?:on|about|for|regarding)\s+", "", cleaned, flags=re.IGNORECASE).strip()
                             if cleaned:
                                 topic = cleaned
                                 break
                 if topic:
                     topic = re.sub(r"^(?:a|an|the|some)\s+", "", topic, flags=re.IGNORECASE).strip()
-                    res = AssistantTools.create_pdf(topic)
+                    res = AssistantTools.create_pdf(topic, theme=theme_name)
+                    if res.get("success"):
+                        res["summary"] = f"Generated **{theme_display}**-styled PDF report: '{res.get('output_path','').split(chr(92))[-1]}'."
                     return {"tool": "create_pdf", "param": topic, "result": res}
 
         return None
