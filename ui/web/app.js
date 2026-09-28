@@ -781,11 +781,27 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
       const audioEl = document.getElementById("jarvis-audio");
       if (audioEl) {
         audioEl.src = "data:audio/mp3;base64," + audioB64;
-        audioEl.play().catch(e => console.warn("Audio playback failed:", e));
+        audioEl.onended = () => {
+          // When JARVIS finishes speaking, show floating mini JARVIS orb and listen for next command
+          showVoiceOrb("Listening for next command...");
+          clearTimeout(orbAutoListenTimer);
+          orbAutoListenTimer = setTimeout(() => {
+            if (!isNativeRecording && !isStreaming) {
+              setOrbListening(true);
+              toggleRecording();
+            }
+          }, 450);
+        };
+        audioEl.play().catch(e => {
+          console.warn("Audio playback failed:", e);
+          showVoiceOrb("Ready for next command...");
+        });
       }
     } catch (err) {
       console.warn("Audio play error:", err);
     }
+  } else if (voiceEnabled && !isStreaming) {
+    showVoiceOrb("Listening for next command...");
   }
 
   currentAssistantBubble = null;
@@ -804,6 +820,7 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
 
 // Send Message
 function sendMessage() {
+  hideVoiceOrb();
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
   const hasAttachments = pendingAttachments.length > 0;
@@ -852,6 +869,50 @@ function sendMessage() {
   });
 }
 
+// ── FLOATING MINI JARVIS VOICE ORB CONTROLLER ──────────────────────────
+let orbDismissTimer = null;
+let orbAutoListenTimer = null;
+
+function showVoiceOrb(statusText = "Listening for next command...") {
+  const orb = document.getElementById("jarvis-voice-orb");
+  const label = document.getElementById("orb-status-text");
+  if (!orb) return;
+  orb.classList.remove("hidden");
+  orb.classList.add("visible");
+  if (label) label.textContent = statusText;
+
+  clearTimeout(orbDismissTimer);
+  // Auto-dismiss after 15 seconds if user does not speak
+  orbDismissTimer = setTimeout(() => {
+    hideVoiceOrb();
+  }, 15000);
+}
+
+function hideVoiceOrb() {
+  const orb = document.getElementById("jarvis-voice-orb");
+  if (!orb) return;
+  orb.classList.remove("visible", "listening");
+  orb.classList.add("hidden");
+  clearTimeout(orbDismissTimer);
+  clearTimeout(orbAutoListenTimer);
+  if (isNativeRecording) {
+    toggleRecording();
+  }
+}
+
+function setOrbListening(active) {
+  const orb = document.getElementById("jarvis-voice-orb");
+  const label = document.getElementById("orb-status-text");
+  if (!orb) return;
+  if (active) {
+    orb.classList.add("listening");
+    if (label) label.textContent = "🎙️ Listening to you...";
+  } else {
+    orb.classList.remove("listening");
+    if (label) label.textContent = "Processing...";
+  }
+}
+
 // Hardware Microphone & Voice Input Controller (Groq Whisper Bridge)
 let isNativeRecording = false;
 let recordingAutoStopTimer = null;
@@ -863,7 +924,8 @@ function toggleRecording() {
   if (!isNativeRecording) {
     // Start Recording from hardware microphone
     isNativeRecording = true;
-    micBtn.classList.add("listening");
+    if (micBtn) micBtn.classList.add("listening");
+    setOrbListening(true);
     chatInput.placeholder = "🎙️ Listening... Speak now (Click mic or press Enter to send)";
 
     window.pywebview.api.start_voice_recording().then((res) => {
@@ -888,6 +950,7 @@ function toggleRecording() {
     // Stop Recording & Transcribe with Groq Whisper
     clearTimeout(recordingAutoStopTimer);
     stopRecordingUI();
+    setOrbListening(false);
     chatInput.placeholder = "⚡ Transcribing your voice with Groq Whisper...";
 
     window.pywebview.api.stop_voice_recording().then((res) => {
@@ -896,6 +959,7 @@ function toggleRecording() {
         chatInput.value = res.text;
         chatInput.style.height = "auto";
         chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
+        hideVoiceOrb();
         sendMessage();
       }
     }).catch(err => {
@@ -909,6 +973,7 @@ function stopRecordingUI() {
   isNativeRecording = false;
   const micBtn = document.getElementById("btn-mic");
   if (micBtn) micBtn.classList.remove("listening");
+  setOrbListening(false);
 }
 
 // Memory Center Functions
@@ -1008,7 +1073,31 @@ function setupEventListeners() {
     voiceEnabled = !voiceEnabled;
     updateVoiceButtonUI();
     window.pywebview.api.toggle_voice(voiceEnabled);
+    if (!voiceEnabled) {
+      hideVoiceOrb();
+    }
   });
+
+  // Floating Mini JARVIS Voice Orb Listeners
+  const orbDismissBtn = document.getElementById("orb-dismiss-btn");
+  if (orbDismissBtn) {
+    orbDismissBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hideVoiceOrb();
+    });
+  }
+
+  const orbCore = document.getElementById("orb-core");
+  if (orbCore) {
+    orbCore.addEventListener("click", () => {
+      if (!isNativeRecording) {
+        setOrbListening(true);
+        toggleRecording();
+      } else {
+        toggleRecording();
+      }
+    });
+  }
 
   // New Chat button
   document.getElementById("btn-new-chat").addEventListener("click", () => {

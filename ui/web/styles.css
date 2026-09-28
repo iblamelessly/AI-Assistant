@@ -1678,3 +1678,186 @@ textarea, input {
   box-shadow: 0 4px 14px rgba(0, 210, 255, 0.35);
 }
 
+/* =========================================================================
+   FLOATING MINI JARVIS VOICE ORB WIDGET
+   ========================================================================= */
+.jarvis-voice-orb {
+  position: fixed;
+  bottom: 86px;
+  right: 28px;
+  width: 82px;
+  height: 82px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.jarvis-voice-orb.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.4) translateY(20px);
+}
+
+.jarvis-voice-orb.visible {
+  opacity: 1;
+  pointer-events: all;
+  transform: scale(1) translateY(0);
+}
+
+.orb-core {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #00f0ff 0%, #0084ff 50%, #060e22 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 24px rgba(0, 210, 255, 0.7), inset 0 0 14px rgba(255, 255, 255, 0.6);
+  position: relative;
+  z-index: 4;
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  transition: all 0.3s ease;
+}
+
+.orb-core:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 35px rgba(0, 210, 255, 0.95), inset 0 0 18px rgba(255, 255, 255, 0.8);
+}
+
+.orb-logo svg {
+  width: 26px;
+  height: 26px;
+  color: #ffffff;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9));
+}
+
+.orb-pulse-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 8px #ffffff;
+  top: 8px;
+  right: 8px;
+  opacity: 0.85;
+}
+
+/* Pulsing Outer Rings */
+.orb-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 210, 255, 0.6);
+  pointer-events: none;
+  animation: orbWave 2.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+.orb-ring-1 {
+  width: 70px;
+  height: 70px;
+  animation-delay: 0s;
+}
+
+.orb-ring-2 {
+  width: 90px;
+  height: 90px;
+  animation-delay: 0.7s;
+}
+
+.orb-ring-3 {
+  width: 110px;
+  height: 110px;
+  animation-delay: 1.4s;
+}
+
+@keyframes orbWave {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+/* Actively Listening State */
+.jarvis-voice-orb.listening .orb-core {
+  background: radial-gradient(circle at 35% 35%, #ff2a5f 0%, #d80036 50%, #20040b 100%);
+  border-color: rgba(255, 120, 160, 0.9);
+  box-shadow: 0 0 35px rgba(255, 42, 95, 0.9), inset 0 0 16px rgba(255, 255, 255, 0.7);
+  animation: listeningPulse 1.2s ease-in-out infinite alternate;
+}
+
+.jarvis-voice-orb.listening .orb-ring {
+  border-color: rgba(255, 42, 95, 0.7);
+  animation-duration: 1.4s;
+}
+
+@keyframes listeningPulse {
+  0% {
+    transform: scale(0.98);
+  }
+  100% {
+    transform: scale(1.08);
+  }
+}
+
+/* Status Label */
+.orb-label {
+  position: absolute;
+  bottom: -22px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #00d2ff;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(0, 210, 255, 0.9);
+  background: rgba(5, 11, 20, 0.85);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 210, 255, 0.3);
+  pointer-events: none;
+}
+
+.jarvis-voice-orb.listening .orb-label {
+  color: #ff3b6c;
+  text-shadow: 0 0 8px rgba(255, 59, 108, 0.9);
+  border-color: rgba(255, 59, 108, 0.4);
+}
+
+/* Dismiss Close Button */
+.orb-dismiss-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #111a2e;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.orb-dismiss-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: scale(1.15);
+}
+
