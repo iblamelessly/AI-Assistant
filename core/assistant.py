@@ -762,7 +762,7 @@ class AssistantEngine:
                 self.history_mgr.add_message(session_id, "assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64)
                 return
-            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file"]:
+            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
                 tool_action_performed = fast_action
                 if on_tool:
                     on_tool(fast_action)

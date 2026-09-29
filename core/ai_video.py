@@ -171,12 +171,17 @@ Return JSON with this exact schema:
             for idx, sc in enumerate(scenes):
                 v_prompt = sc.get("visual_prompt", prompt)
                 narr = sc.get("narration", "")
-                if narr:
-                    full_narration_parts.append(narr)
 
-                # Generate image for scene
-                img_res = ai_image_engine.generate_image(v_prompt, width=1280, height=720)
-                if not img_res.get("success") or not img_res.get("output_path"):
+                # Generate image for scene — retry up to 2 times
+                img_res = None
+                for img_attempt in range(2):
+                    img_res = ai_image_engine.generate_image(v_prompt, width=1280, height=720)
+                    if img_res.get("success") and img_res.get("output_path"):
+                        break
+                    time.sleep(2)  # Brief pause before retry
+
+                if not img_res or not img_res.get("success") or not img_res.get("output_path"):
+                    print(f"[AIVideoEngine] Scene {idx + 1} image failed after retries, skipping.")
                     continue
 
                 img_path = Path(img_res["output_path"])
@@ -197,6 +202,9 @@ Return JSON with this exact schema:
                 res = subprocess.run(cmd_clip, capture_output=True)
                 if res.returncode == 0 and clip_path.exists():
                     temp_clips.append(clip_path)
+                    # Only add narration for successfully compiled scenes (fixes desync)
+                    if narr:
+                        full_narration_parts.append(narr)
 
             if not temp_clips:
                 return {"success": False, "error": "Failed to compile video scene clips."}

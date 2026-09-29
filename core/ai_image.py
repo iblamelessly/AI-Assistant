@@ -68,40 +68,43 @@ class AIImageEngine:
                 enhanced_prompt = f"{clean_prompt}, high quality, detailed, 8k"
 
         seed = int(time.time() * 1000) % 10000000
-        encoded_prompt = quote(enhanced_prompt)
-        url = f"{POLLINATIONS_BASE}/{encoded_prompt}?width={width}&height={height}&model=flux&nologo=true&seed={seed}"
 
-        try:
-            resp = requests.get(url, timeout=45)
-            if resp.status_code == 200 and len(resp.content) > 1000:
-                slug = re.sub(r'[^a-zA-Z0-9_-]+', '_', clean_prompt[:28].lower()).strip('_') or "ai_image"
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                filename = f"{slug}_{timestamp}.jpg"
-                out_path = self.output_dir / filename
+        # Retry loop — 2 attempts with different seeds for reliability
+        last_error = "Image generation failed."
+        for attempt in range(2):
+            attempt_seed = seed + attempt * 7919  # Different seed per retry
+            encoded_prompt = quote(enhanced_prompt)
+            url = f"{POLLINATIONS_BASE}/{encoded_prompt}?width={width}&height={height}&model=flux&nologo=true&seed={attempt_seed}"
 
-                with open(out_path, "wb") as f:
-                    f.write(resp.content)
+            try:
+                resp = requests.get(url, timeout=90)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    slug = re.sub(r'[^a-zA-Z0-9_-]+', '_', clean_prompt[:28].lower()).strip('_') or "ai_image"
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    filename = f"{slug}_{timestamp}.jpg"
+                    out_path = self.output_dir / filename
 
-                style_label = f" ({matched_style.title()} style)" if matched_style else ""
-                return {
-                    "success": True,
-                    "action": "generate_ai_image",
-                    "prompt": clean_prompt,
-                    "style": matched_style or "default",
-                    "output_path": str(out_path.resolve()),
-                    "file_size": out_path.stat().st_size,
-                    "summary": f"Created AI image{style_label}: '{filename}' for \"{clean_prompt}\"."
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Image generation service returned status {resp.status_code}.",
-                    "summary": "Could not generate AI image at this time."
-                }
-        except requests.exceptions.Timeout:
-            return {"success": False, "error": "Image generation timed out after 45s."}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+                    with open(out_path, "wb") as f:
+                        f.write(resp.content)
+
+                    style_label = f" ({matched_style.title()} style)" if matched_style else ""
+                    return {
+                        "success": True,
+                        "action": "generate_ai_image",
+                        "prompt": clean_prompt,
+                        "style": matched_style or "default",
+                        "output_path": str(out_path.resolve()),
+                        "file_size": out_path.stat().st_size,
+                        "summary": f"Created AI image{style_label}: '{filename}' for \"{clean_prompt}\"."
+                    }
+                else:
+                    last_error = f"Image generation service returned status {resp.status_code}."
+            except requests.exceptions.Timeout:
+                last_error = f"Image generation timed out (attempt {attempt + 1}/2)."
+            except Exception as e:
+                last_error = str(e)
+
+        return {"success": False, "error": last_error, "summary": "Could not generate AI image at this time."}
 
     def alter_image(self, image_path: str, instruction: str) -> dict:
         """
