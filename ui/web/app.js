@@ -781,27 +781,13 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
       const audioEl = document.getElementById("jarvis-audio");
       if (audioEl) {
         audioEl.src = "data:audio/mp3;base64," + audioB64;
-        audioEl.onended = () => {
-          // When JARVIS finishes speaking, show floating mini JARVIS orb and listen for next command
-          showVoiceOrb("Listening for next command...");
-          clearTimeout(orbAutoListenTimer);
-          orbAutoListenTimer = setTimeout(() => {
-            if (!isNativeRecording && !isStreaming) {
-              setOrbListening(true);
-              toggleRecording();
-            }
-          }, 450);
-        };
         audioEl.play().catch(e => {
           console.warn("Audio playback failed:", e);
-          showVoiceOrb("Ready for next command...");
         });
       }
     } catch (err) {
       console.warn("Audio play error:", err);
     }
-  } else if (voiceEnabled && !isStreaming) {
-    showVoiceOrb("Listening for next command...");
   }
 
   currentAssistantBubble = null;
@@ -895,6 +881,8 @@ function hideVoiceOrb() {
   orb.classList.add("hidden");
   clearTimeout(orbDismissTimer);
   clearTimeout(orbAutoListenTimer);
+  const toggleBtn = document.getElementById("btn-toggle-orb");
+  if (toggleBtn) toggleBtn.classList.remove("active");
   if (isNativeRecording) {
     toggleRecording();
   }
@@ -1098,6 +1086,37 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Voice Orb Toggle Button (explicit user control)
+  const orbToggleBtn = document.getElementById("btn-toggle-orb");
+  if (orbToggleBtn) {
+    orbToggleBtn.addEventListener("click", () => {
+      const orb = document.getElementById("jarvis-voice-orb");
+      if (orb && orb.classList.contains("visible")) {
+        hideVoiceOrb();
+        orbToggleBtn.classList.remove("active");
+      } else {
+        showVoiceOrb("Click the orb to speak, or press Alt+J to dismiss.");
+        orbToggleBtn.classList.add("active");
+      }
+    });
+  }
+
+  // Keyboard shortcut: Alt+J to toggle voice orb
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey && (e.key === "j" || e.key === "J")) {
+      e.preventDefault();
+      const orb = document.getElementById("jarvis-voice-orb");
+      const toggleBtn = document.getElementById("btn-toggle-orb");
+      if (orb && orb.classList.contains("visible")) {
+        hideVoiceOrb();
+        if (toggleBtn) toggleBtn.classList.remove("active");
+      } else {
+        showVoiceOrb("Click the orb to speak, or press Alt+J to dismiss.");
+        if (toggleBtn) toggleBtn.classList.add("active");
+      }
+    }
+  });
 
   // New Chat button
   document.getElementById("btn-new-chat").addEventListener("click", () => {
