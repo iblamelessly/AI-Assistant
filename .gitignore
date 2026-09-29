@@ -2,6 +2,7 @@
 memory.json
 chat_sessions.json
 config.json
+usage_stats.json
 *.db
 *.sqlite
 .env

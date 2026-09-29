@@ -1,5 +1,6 @@
 import json
 import requests
+from pathlib import Path
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b"
@@ -32,42 +33,91 @@ class UsageTracker:
         self.rate_limit_reset_tokens = None
         self.rate_limit_reset_requests = None
 
+    def _get_storage_path(self):
+        try:
+            return Path(__file__).resolve().parent.parent / "usage_stats.json"
+        except Exception:
+            return Path("usage_stats.json")
+
+    def _load_persisted(self):
+        try:
+            p = self._get_storage_path()
+            if p.exists():
+                with open(p, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                    self.prompt_tokens = d.get("prompt_tokens", 0)
+                    self.completion_tokens = d.get("completion_tokens", 0)
+                    self.total_tokens = d.get("total_tokens", 0)
+                    self.total_requests = d.get("total_requests", 0)
+                    self.ai_images_count = d.get("ai_images", 0)
+                    self.ai_videos_count = d.get("ai_videos", 0)
+                    self.documents_count = d.get("documents", 0)
+                    self.rate_limit_remaining_tokens = d.get("rate_limit_remaining_tokens")
+                    self.rate_limit_limit_tokens = d.get("rate_limit_limit_tokens")
+                    self.rate_limit_remaining_requests = d.get("rate_limit_remaining_requests")
+                    self.rate_limit_limit_requests = d.get("rate_limit_limit_requests")
+        except Exception:
+            pass
+
+    def _save_persisted(self):
+        try:
+            p = self._get_storage_path()
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(self.get_stats(), f, indent=2)
+        except Exception:
+            pass
+
     def record_chat_tokens(self, prompt: int, completion: int, total: int):
         self.prompt_tokens += max(0, prompt)
         self.completion_tokens += max(0, completion)
         self.total_tokens += max(0, total)
         self.total_requests += 1
+        self._save_persisted()
 
     def record_headers(self, headers: dict):
         if not headers:
             return
+        updated = False
         for k, v in headers.items():
             kl = k.lower()
             if kl == "x-ratelimit-remaining-tokens":
-                try: self.rate_limit_remaining_tokens = int(v)
+                try:
+                    self.rate_limit_remaining_tokens = int(v)
+                    updated = True
                 except Exception: pass
             elif kl == "x-ratelimit-limit-tokens":
-                try: self.rate_limit_limit_tokens = int(v)
+                try:
+                    self.rate_limit_limit_tokens = int(v)
+                    updated = True
                 except Exception: pass
             elif kl == "x-ratelimit-remaining-requests":
-                try: self.rate_limit_remaining_requests = int(v)
+                try:
+                    self.rate_limit_remaining_requests = int(v)
+                    updated = True
                 except Exception: pass
             elif kl == "x-ratelimit-limit-requests":
-                try: self.rate_limit_limit_requests = int(v)
+                try:
+                    self.rate_limit_limit_requests = int(v)
+                    updated = True
                 except Exception: pass
             elif kl == "x-ratelimit-reset-tokens":
                 self.rate_limit_reset_tokens = v
             elif kl == "x-ratelimit-reset-requests":
                 self.rate_limit_reset_requests = v
+        if updated:
+            self._save_persisted()
 
     def record_image(self):
         self.ai_images_count += 1
+        self._save_persisted()
 
     def record_video(self):
         self.ai_videos_count += 1
+        self._save_persisted()
 
     def record_document(self):
         self.documents_count += 1
+        self._save_persisted()
 
     def get_stats(self) -> dict:
         return {
@@ -88,6 +138,7 @@ class UsageTracker:
 
 # Global singleton usage tracker
 usage_tracker = UsageTracker()
+usage_tracker._load_persisted()
 
 class GroqClient:
     """Client for Groq Cloud ultra-fast inference with dynamic model detection."""
