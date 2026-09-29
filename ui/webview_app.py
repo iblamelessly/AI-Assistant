@@ -44,6 +44,8 @@ class AssistantApi:
 
         installed_models = self.engine.get_installed_models()
 
+        from core.groq_client import usage_tracker
+
         return {
             "sessions": sessions,
             "active_session_id": active_id,
@@ -52,7 +54,8 @@ class AssistantApi:
             "memory": self.memory_mgr.get_memory(),
             "system_stats": AssistantTools.get_system_stats(),
             "voice_enabled": self.voice_engine.is_enabled() if self.voice_engine else False,
-            "config": self.config_mgr.get_all()
+            "config": self.config_mgr.get_all(),
+            "usage_stats": usage_tracker.get_stats()
         }
 
     def send_message(self, user_message, session_id, attachments=None):
@@ -146,6 +149,59 @@ class AssistantApi:
         """Returns token usage, generation counters, and rate limits."""
         from core.groq_client import usage_tracker
         return usage_tracker.get_stats()
+
+    def set_window_on_top(self, stay_on_top: bool):
+        """Controls whether the JARVIS desktop window stays on top of all other apps."""
+        if self._window:
+            try:
+                self._window.on_top = bool(stay_on_top)
+                return True
+            except Exception as e:
+                print(f"[AssistantApi] set_window_on_top error: {e}")
+        return False
+
+    def toggle_mini_mode(self, enabled=None):
+        """Switches between full window mode and compact floating mini voice orb mode."""
+        if not self._window:
+            return False
+        try:
+            if enabled is None:
+                enabled = not getattr(self, "_is_mini", False)
+
+            if enabled:
+                if not getattr(self, "_is_mini", False):
+                    self._prev_width = self._window.width or 1140
+                    self._prev_height = self._window.height or 780
+                    self._prev_x = self._window.x
+                    self._prev_y = self._window.y
+                self._is_mini = True
+                self._window.on_top = True
+                self._window.resize(320, 180)
+                try:
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    screen_w = user32.GetSystemMetrics(0)
+                    screen_h = user32.GetSystemMetrics(1)
+                    target_x = max(0, screen_w - 340)
+                    target_y = max(0, screen_h - 240)
+                    self._window.move(target_x, target_y)
+                except Exception:
+                    pass
+                return True
+            else:
+                self._is_mini = False
+                prev_w = getattr(self, "_prev_width", 1140)
+                prev_h = getattr(self, "_prev_height", 780)
+                self._window.resize(prev_w, prev_h)
+                if getattr(self, "_prev_x", None) is not None and getattr(self, "_prev_y", None) is not None:
+                    try:
+                        self._window.move(self._prev_x, self._prev_y)
+                    except Exception:
+                        pass
+                return False
+        except Exception as e:
+            print(f"[AssistantApi] toggle_mini_mode error: {e}")
+            return False
 
     def execute_terminal_command(self, command):
         """Allows direct execution of PowerShell / terminal commands."""
@@ -342,7 +398,7 @@ def start_desktop_app():
         js_api=api,
         width=1140,
         height=780,
-        min_size=(880, 620),
+        min_size=(300, 160),
         background_color="#0d0d0d"
     )
 

@@ -565,6 +565,11 @@ function onAppReady() {
     if (data.system_stats) {
       updateStatsPill(data.system_stats);
     }
+
+    // Populate token & asset usage
+    if (data.usage_stats && typeof window.renderUsageData === "function") {
+      window.renderUsageData(data.usage_stats);
+    }
   }).catch((err) => {
     console.error("Init app error:", err);
   });
@@ -802,11 +807,13 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
   window.pywebview.api.get_memory().then((mem) => {
     populateMemoryUI(mem);
   });
+
+  const orbLabel = document.getElementById("orb-status-text");
+  if (orbLabel) orbLabel.textContent = "Ready for command...";
 };
 
 // Send Message
 function sendMessage() {
-  hideVoiceOrb();
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
   const hasAttachments = pendingAttachments.length > 0;
@@ -856,10 +863,10 @@ function sendMessage() {
 }
 
 // ── FLOATING MINI JARVIS VOICE ORB CONTROLLER ──────────────────────────
-let orbDismissTimer = null;
-let orbAutoListenTimer = null;
+let isAlwaysOnTopPinned = false;
+let isMiniModeActive = false;
 
-function showVoiceOrb(statusText = "Listening for next command...") {
+function showVoiceOrb(statusText = "Ready for command...") {
   const orb = document.getElementById("jarvis-voice-orb");
   const label = document.getElementById("orb-status-text");
   if (!orb) return;
@@ -867,11 +874,13 @@ function showVoiceOrb(statusText = "Listening for next command...") {
   orb.classList.add("visible");
   if (label) label.textContent = statusText;
 
-  clearTimeout(orbDismissTimer);
-  // Auto-dismiss after 15 seconds if user does not speak
-  orbDismissTimer = setTimeout(() => {
-    hideVoiceOrb();
-  }, 15000);
+  const toggleBtn = document.getElementById("btn-toggle-orb");
+  if (toggleBtn) toggleBtn.classList.add("active");
+
+  // Keep window visible on top across other applications
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
+    window.pywebview.api.set_window_on_top(true);
+  }
 }
 
 function hideVoiceOrb() {
@@ -879,13 +888,38 @@ function hideVoiceOrb() {
   if (!orb) return;
   orb.classList.remove("visible", "listening");
   orb.classList.add("hidden");
-  clearTimeout(orbDismissTimer);
-  clearTimeout(orbAutoListenTimer);
   const toggleBtn = document.getElementById("btn-toggle-orb");
   if (toggleBtn) toggleBtn.classList.remove("active");
+
+  // Restore normal window layering if not explicitly pinned
+  if (!isAlwaysOnTopPinned && window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
+    window.pywebview.api.set_window_on_top(false);
+  }
+
+  // Restore normal window if in mini mode
+  if (isMiniModeActive) {
+    toggleMiniMode(false);
+  }
+
   if (isNativeRecording) {
     toggleRecording();
   }
+}
+
+function toggleMiniMode(forceState) {
+  if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.toggle_mini_mode) return;
+  const targetState = forceState !== undefined ? forceState : !isMiniModeActive;
+  window.pywebview.api.toggle_mini_mode(targetState).then((isMini) => {
+    isMiniModeActive = isMini;
+    if (isMini) {
+      document.body.classList.add("mini-mode");
+      showVoiceOrb("Mini JARVIS ready...");
+    } else {
+      document.body.classList.remove("mini-mode");
+    }
+  }).catch((err) => {
+    console.warn("Toggle mini mode error:", err);
+  });
 }
 
 function setOrbListening(active) {
@@ -947,7 +981,8 @@ function toggleRecording() {
         chatInput.value = res.text;
         chatInput.style.height = "auto";
         chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
-        hideVoiceOrb();
+        const label = document.getElementById("orb-status-text");
+        if (label) label.textContent = "Processing command...";
         sendMessage();
       }
     }).catch(err => {
@@ -1066,6 +1101,18 @@ function setupEventListeners() {
     }
   });
 
+  // Always on Top Pin Button
+  const pinBtn = document.getElementById("btn-pin-ontop");
+  if (pinBtn) {
+    pinBtn.addEventListener("click", () => {
+      isAlwaysOnTopPinned = !isAlwaysOnTopPinned;
+      pinBtn.classList.toggle("active", isAlwaysOnTopPinned);
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
+        window.pywebview.api.set_window_on_top(isAlwaysOnTopPinned);
+      }
+    });
+  }
+
   // Floating Mini JARVIS Voice Orb Listeners
   const orbDismissBtn = document.getElementById("orb-dismiss-btn");
   if (orbDismissBtn) {
@@ -1075,9 +1122,19 @@ function setupEventListeners() {
     });
   }
 
+  const orbMiniBtn = document.getElementById("orb-mini-btn");
+  if (orbMiniBtn) {
+    orbMiniBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMiniMode();
+    });
+  }
+
   const orbCore = document.getElementById("orb-core");
   if (orbCore) {
     orbCore.addEventListener("click", () => {
+      const orb = document.getElementById("jarvis-voice-orb");
+      if (orb && orb._preventClick) return;
       if (!isNativeRecording) {
         setOrbListening(true);
         toggleRecording();
@@ -1086,6 +1143,52 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Make Voice Orb Draggable on Screen
+  (function initOrbDrag() {
+    const orb = document.getElementById("jarvis-voice-orb");
+    if (!orb) return;
+    let isDragging = false;
+    let startX = 0, startY = 0, origX = 0, origY = 0;
+    let hasMoved = false;
+
+    orb.addEventListener("mousedown", (e) => {
+      if (e.target.closest("#orb-dismiss-btn") || e.target.closest("#orb-mini-btn")) return;
+      isDragging = true;
+      hasMoved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = orb.getBoundingClientRect();
+      origX = rect.left;
+      origY = rect.top;
+      orb.style.transition = "none";
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        hasMoved = true;
+      }
+      const newX = Math.max(10, Math.min(window.innerWidth - 90, origX + dx));
+      const newY = Math.max(10, Math.min(window.innerHeight - 90, origY + dy));
+      orb.style.left = newX + "px";
+      orb.style.top = newY + "px";
+      orb.style.right = "auto";
+      orb.style.bottom = "auto";
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!isDragging) return;
+      isDragging = false;
+      orb.style.transition = "";
+      if (hasMoved) {
+        orb._preventClick = true;
+        setTimeout(() => { orb._preventClick = false; }, 120);
+      }
+    });
+  })();
 
   // Voice Orb Toggle Button (explicit user control)
   const orbToggleBtn = document.getElementById("btn-toggle-orb");
@@ -1096,7 +1199,7 @@ function setupEventListeners() {
         hideVoiceOrb();
         orbToggleBtn.classList.remove("active");
       } else {
-        showVoiceOrb("Click the orb to speak, or press Alt+J to dismiss.");
+        showVoiceOrb("Ready for command... Click orb to speak.");
         orbToggleBtn.classList.add("active");
       }
     });
@@ -1112,7 +1215,7 @@ function setupEventListeners() {
         hideVoiceOrb();
         if (toggleBtn) toggleBtn.classList.remove("active");
       } else {
-        showVoiceOrb("Click the orb to speak, or press Alt+J to dismiss.");
+        showVoiceOrb("Ready for command... Click orb to speak.");
         if (toggleBtn) toggleBtn.classList.add("active");
       }
     }
@@ -1240,34 +1343,56 @@ window.replyConfirmation = function(choice) {
 
   // Modal open/close: Usage & Limits Dashboard
   const usageModal = document.getElementById("usage-modal");
+  function renderUsageData(stats) {
+    if (!stats) return;
+    const pTokens = document.getElementById("stat-prompt-tokens");
+    const cTokens = document.getElementById("stat-completion-tokens");
+    const tTokens = document.getElementById("stat-total-tokens");
+    const tReqs = document.getElementById("stat-total-requests");
+    const aiImgs = document.getElementById("stat-ai-images");
+    const aiVids = document.getElementById("stat-ai-videos");
+    const docs = document.getElementById("stat-documents");
+
+    if (pTokens) pTokens.textContent = (stats.prompt_tokens || 0).toLocaleString();
+    if (cTokens) cTokens.textContent = (stats.completion_tokens || 0).toLocaleString();
+    if (tTokens) tTokens.textContent = (stats.total_tokens || 0).toLocaleString();
+    if (tReqs) tReqs.textContent = (stats.total_requests || 0).toLocaleString();
+
+    if (aiImgs) aiImgs.textContent = (stats.ai_images || 0).toLocaleString();
+    if (aiVids) aiVids.textContent = (stats.ai_videos || 0).toLocaleString();
+    if (docs) docs.textContent = (stats.documents || 0).toLocaleString();
+
+    const rateTokensEl = document.getElementById("stat-rate-tokens");
+    const barTokensEl = document.getElementById("bar-rate-tokens");
+    if (rateTokensEl) {
+      if (stats.rate_limit_remaining_tokens !== null && stats.rate_limit_limit_tokens) {
+        const pct = Math.max(0, Math.min(100, Math.round((stats.rate_limit_remaining_tokens / stats.rate_limit_limit_tokens) * 100)));
+        rateTokensEl.textContent = `${stats.rate_limit_remaining_tokens.toLocaleString()} / ${stats.rate_limit_limit_tokens.toLocaleString()} (${pct}%)`;
+        if (barTokensEl) barTokensEl.style.width = pct + "%";
+      } else {
+        rateTokensEl.textContent = stats.rate_limit_remaining_tokens !== null ? stats.rate_limit_remaining_tokens.toLocaleString() : "Available (Standard Free Tier)";
+      }
+    }
+
+    const rateReqsEl = document.getElementById("stat-rate-requests");
+    const barReqsEl = document.getElementById("bar-rate-requests");
+    if (rateReqsEl) {
+      if (stats.rate_limit_remaining_requests !== null && stats.rate_limit_limit_requests) {
+        const pct = Math.max(0, Math.min(100, Math.round((stats.rate_limit_remaining_requests / stats.rate_limit_limit_requests) * 100)));
+        rateReqsEl.textContent = `${stats.rate_limit_remaining_requests.toLocaleString()} / ${stats.rate_limit_limit_requests.toLocaleString()} (${pct}%)`;
+        if (barReqsEl) barReqsEl.style.width = pct + "%";
+      } else {
+        rateReqsEl.textContent = stats.rate_limit_remaining_requests !== null ? stats.rate_limit_remaining_requests.toLocaleString() : "Active (Optimal)";
+      }
+    }
+  }
+
+  window.renderUsageData = renderUsageData;
+
   function refreshUsageModalUI() {
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_usage_stats) return;
     window.pywebview.api.get_usage_stats().then((stats) => {
-      if (!stats) return;
-      document.getElementById("stat-prompt-tokens").textContent = (stats.prompt_tokens || 0).toLocaleString();
-      document.getElementById("stat-completion-tokens").textContent = (stats.completion_tokens || 0).toLocaleString();
-      document.getElementById("stat-total-tokens").textContent = (stats.total_tokens || 0).toLocaleString();
-      document.getElementById("stat-total-requests").textContent = (stats.total_requests || 0).toLocaleString();
-
-      document.getElementById("stat-ai-images").textContent = (stats.ai_images || 0).toLocaleString();
-      document.getElementById("stat-ai-videos").textContent = (stats.ai_videos || 0).toLocaleString();
-      document.getElementById("stat-documents").textContent = (stats.documents || 0).toLocaleString();
-
-      if (stats.rate_limit_remaining_tokens !== null && stats.rate_limit_limit_tokens) {
-        const pct = Math.max(0, Math.min(100, Math.round((stats.rate_limit_remaining_tokens / stats.rate_limit_limit_tokens) * 100)));
-        document.getElementById("stat-rate-tokens").textContent = `${stats.rate_limit_remaining_tokens.toLocaleString()} / ${stats.rate_limit_limit_tokens.toLocaleString()} (${pct}%)`;
-        document.getElementById("bar-rate-tokens").style.width = pct + "%";
-      } else {
-        document.getElementById("stat-rate-tokens").textContent = stats.rate_limit_remaining_tokens !== null ? stats.rate_limit_remaining_tokens.toLocaleString() : "Available (Standard Free Tier)";
-      }
-
-      if (stats.rate_limit_remaining_requests !== null && stats.rate_limit_limit_requests) {
-        const pct = Math.max(0, Math.min(100, Math.round((stats.rate_limit_remaining_requests / stats.rate_limit_limit_requests) * 100)));
-        document.getElementById("stat-rate-requests").textContent = `${stats.rate_limit_remaining_requests.toLocaleString()} / ${stats.rate_limit_limit_requests.toLocaleString()} (${pct}%)`;
-        document.getElementById("bar-rate-requests").style.width = pct + "%";
-      } else {
-        document.getElementById("stat-rate-requests").textContent = stats.rate_limit_remaining_requests !== null ? stats.rate_limit_remaining_requests.toLocaleString() : "Active (Optimal)";
-      }
+      renderUsageData(stats);
     }).catch((err) => console.warn("Failed to fetch usage stats:", err));
   }
 

@@ -1022,6 +1022,11 @@ textarea, input {
   width: 460px;
 }
 
+.usage-modal-content {
+  width: 560px;
+  max-width: 92vw;
+}
+
 .modal-header {
   padding: 16px 22px;
   border-bottom: 1px solid var(--border-subtle);
@@ -1831,16 +1836,14 @@ textarea, input {
   border-color: rgba(255, 59, 108, 0.4);
 }
 
-/* Dismiss Close Button */
-.orb-dismiss-btn {
+/* Orb Control Buttons */
+.orb-control-btn {
   position: absolute;
-  top: -6px;
-  right: -6px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
   background: #111a2e;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
   color: #cbd5e1;
   font-size: 13px;
   font-weight: bold;
@@ -1854,10 +1857,73 @@ textarea, input {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
 
+.orb-control-btn:hover {
+  background: var(--accent);
+  border-color: #ffffff;
+  color: #ffffff;
+  transform: scale(1.15);
+}
+
+.orb-dismiss-btn {
+  top: -6px;
+  right: -6px;
+}
+
 .orb-dismiss-btn:hover {
   background: #ef4444;
   border-color: #ef4444;
   color: #ffffff;
-  transform: scale(1.15);
+}
+
+.orb-mini-btn {
+  top: -6px;
+  left: -6px;
+}
+
+.orb-mini-btn svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+}
+
+/* Mini Mode (Compact Floating Widget Mode) */
+body.mini-mode .sidebar,
+body.mini-mode .chat-header,
+body.mini-mode .messages-container,
+body.mini-mode .input-container-outer,
+body.mini-mode .modal-overlay {
+  display: none !important;
+}
+
+body.mini-mode {
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+body.mini-mode .app-layout {
+  height: 100vh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+body.mini-mode .chat-main {
+  background: transparent !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+body.mini-mode .jarvis-voice-orb {
+  position: static !important;
+  transform: scale(1.05) !important;
+  opacity: 1 !important;
+  pointer-events: all !important;
+}
+
+body.mini-mode .orb-mini-btn svg {
+  transform: rotate(180deg);
 }
 

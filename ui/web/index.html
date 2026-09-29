@@ -94,6 +94,12 @@
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
             </svg>
           </button>
+          <button class="icon-btn" id="btn-pin-ontop" title="Always on Top (Keep Visible Over Other Apps)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 17v5"></path>
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V5h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1v5.76z"></path>
+            </svg>
+          </button>
           <button class="icon-btn" id="btn-toggle-orb" title="Toggle Voice Orb (Alt+J)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
@@ -386,9 +392,11 @@
         </div>
       </div>
     </div>
+  </div>
+
   <!-- USAGE & LIMITS MODAL -->
   <div class="modal-overlay" id="usage-modal">
-    <div class="modal-content" style="max-width: 560px;">
+    <div class="modal-content usage-modal-content">
       <div class="modal-header">
         <div class="modal-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -508,7 +516,7 @@
     <div class="orb-ring orb-ring-1"></div>
     <div class="orb-ring orb-ring-2"></div>
     <div class="orb-ring orb-ring-3"></div>
-    <div class="orb-core" id="orb-core">
+    <div class="orb-core" id="orb-core" title="Click to speak (drag to reposition)">
       <div class="orb-logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -516,8 +524,16 @@
       </div>
       <div class="orb-pulse-dot"></div>
     </div>
-    <div class="orb-label" id="orb-status-text">Listening...</div>
-    <button class="orb-dismiss-btn" id="orb-dismiss-btn" title="Dismiss listener">&times;</button>
+    <div class="orb-label" id="orb-status-text">Ready for command...</div>
+    <button class="orb-control-btn orb-mini-btn" id="orb-mini-btn" title="Toggle Compact Mode">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 14 10 14 10 20"></polyline>
+        <polyline points="20 10 14 10 14 4"></polyline>
+        <line x1="14" y1="10" x2="21" y2="3"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+    </button>
+    <button class="orb-control-btn orb-dismiss-btn" id="orb-dismiss-btn" title="Cancel & Close (or Alt+J)">&times;</button>
   </div>
 
   <script src="app.js"></script>
