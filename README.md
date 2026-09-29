@@ -9,33 +9,28 @@ A smart, high-performance personal AI desktop assistant built with **Python**, *
 
 ---
 
-## ✨ Features
+- 🧠 **Super AI Architecture & Cognitive Dispatcher**:
+  - **Unified Brain Dispatcher**: Uses an intelligent Groq LLM classifier (`llama-3.1-8b-instant`) to comprehend natural, creative, and multi-step requests without depending solely on rigid regex triggers.
+  - **Dynamic Multimodal Synthesis**: Seamlessly chains documents, images, video slideshows, and vision analysis under one unified interface.
 
-- ⚡ **Dual Engine: Groq Cloud & Local Ollama**:
-  - **Groq Cloud (Default)**: Lightning-fast reasoning (~300 tokens/second) powered by `llama-3.3-70b-versatile` and `llama-3.1-8b-instant`.
-  - **Local Ollama Fallback**: Fully offline execution (`qwen3`, `llama3`, `mistral`, etc.) when no internet connection is available.
-  - **Live Provider Switching**: Seamlessly toggle between Groq Cloud and Local Ollama inside the Settings modal.
+- 🎨 **Generative AI Media Creation & Neural Editing**:
+  - **Text-to-Image Generation**: Photorealistic 8K image generation powered by FLUX / Pollinations.ai with automated prompt enhancement and 11 distinct styles (anime, cyberpunk, 3D CGI, watercolor, oil painting, sketch, cinematic).
+  - **AI Image Transformation & Style Transfer**: Alter uploaded or generated images with neural filters (cyberpunk glow, pencil sketch, vintage film, noir monochrome, vibrant HDR).
+  - **Text-to-Video Slideshow Synthesis**: Autonomous generation of multi-scene cinematic videos complete with LLM scene planning, FLUX imagery, and synchronized neural voice narration stitched via hardware-accelerated FFmpeg.
+  - **Interactive Lightbox & Media Gallery**: Click any generated or attached media to view full resolution with quick access to Reveal in Windows Explorer.
 
-- 🛡️ **Human-like Permission & Ambiguity Guard**:
-  - **Human-in-the-Loop Confirmation**: Never deletes files, kills processes, or overwrites scripts without asking for your explicit approval (`Proceed? [Yes / No]`).
-  - **Interactive Confirmation Buttons**: One-click **✓ Approve / Yes** and **✕ Cancel / No** buttons appear directly inside chat bubbles.
-  - **Ambiguity & Duplicate Detection**: If you ask to delete or modify a file, Jarvis automatically checks your workspace to determine if you mean the original or a backup/duplicate copy before acting.
+- 📄 **Autonomous Professional Document Generator**:
+  - **PowerPoint Presentations (.pptx)**: Generates 10-14 slide presentations featuring 21 professional themes, executive cards, split layouts, and metrics grids.
+  - **Word Documents (.docx) & PDF Reports**: Executive documents complete with callout banners, tables, structured sections, and dynamic styling.
 
-- 🎙️ **Bidirectional Voice Control**:
-  - **Speech-to-Text**: Click the microphone button (`🎙️`) to issue direct voice commands.
-  - **Neural Jarvis Voice**: Jarvis speaks back out loud with an English neural voice (Iron Man style) powered by Microsoft Edge Neural TTS.
-  - **Voice Mute Toggle**: Quickly enable or mute speech audio anytime in the header.
+- 📊 **Token & Quota Usage Dashboard**:
+  - Real-time token consumption tracking (Prompt, Completion, Total billed).
+  - Generative creation counters (AI Images, Videos, and Documents generated).
+  - Live Groq Cloud rate limit metrics and visual quota capacity indicators.
 
-- 💻 **Full Autonomous Laptop & Project Control**:
-  - **PowerShell / Terminal Execution**: Jarvis can execute any command (`git status`, `git commit`, `python script.py`, `pip install`, etc.) and displays formatted terminal output directly in the chat.
-  - **File Operations**: Read, create, write, search, and manage files across your machine.
-  - **Hardware Automation**: Control Windows master volume directly via Windows CoreAudio (`pycaw`), capture screenshots (*"Take a screenshot"*), and inspect live CPU, RAM, Disk, and Battery stats.
-  - **Application Management**: Launch apps (*"Open VS Code"*, *"Open Chrome"*, *"Open Notepad"*) and inspect running processes.
-
-- 🖥️ **Obsidian Dark Desktop GUI**: Modern, responsive dark-mode interface built with native Edge WebView2 runtime (lightweight, zero Electron bloat).
-- 🧠 **Dynamic & Async Memory System**: Background fact extraction continuously learns about your preferences, habits, and career goals without stalling conversations.
-- 📂 **Visual Memory Center**: Interactive dashboard to view, edit, add, or delete memories stored in `memory.json`.
-- 💬 **Multi-Session Chat History**: Save, switch between, and clear past conversation sessions locally.
+- 🎙️ **On-Demand Floating JARVIS Voice Orb & Accent Adaptation**:
+  - **On-Demand Voice Orb**: Interactive voice orb widget toggled on demand via the header icon or `Alt+J` shortcut.
+  - **Whisper Accent Accuracy**: Hardware voice input transcribed via Groq Whisper with phonetic normalization for international accents.
 
 ---
 
@@ -104,13 +99,17 @@ AI-Assistant/
 ├── requirements.txt           # Python package dependencies
 ├── README.md                  # Documentation
 ├── core/
-│   ├── assistant.py           # Unified Autonomous Agent engine
+│   ├── assistant.py           # Unified Autonomous Super AI engine & dispatcher
+│   ├── ai_image.py            # FLUX text-to-image & neural style alteration
+│   ├── ai_video.py            # Multi-scene AI video slideshow compiler
+│   ├── document_generator.py  # 21-theme professional presentation & document engine
 │   ├── config.py              # Local persistent configuration manager
-│   ├── groq_client.py         # Groq Cloud API streaming client (~300 T/s)
+│   ├── groq_client.py         # Groq Cloud API client & UsageTracker
+│   ├── mic.py                 # Whisper recording & phonetic accent normalization
 │   ├── permissions.py         # Human-in-the-Loop permission & ambiguity guard
 │   ├── memory.py              # Thread-safe memory manager & async worker
 │   ├── voice.py               # Edge-TTS neural speech synthesis
-│   ├── tools.py               # Laptop tools (terminal, volume, apps, hardware)
+│   ├── tools.py               # Tool registry & unified tool execution
 │   └── history.py             # Multi-session conversation store
 └── ui/
     ├── webview_app.py         # PyWebView desktop runner & Python-JS bridge

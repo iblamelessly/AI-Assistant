@@ -31,3 +31,7 @@ media/uploads/*
 # Generated Documents (PPTX, DOCX, PDF)
 documents/output/*
 !documents/output/.gitkeep
+
+# Stale or duplicate worktrees
+AI-Assistant-1/
+AI-Assistant*/
