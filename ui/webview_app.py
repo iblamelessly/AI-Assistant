@@ -142,6 +142,11 @@ class AssistantApi:
     def get_system_stats(self):
         return AssistantTools.get_system_stats()
 
+    def get_usage_stats(self):
+        """Returns token usage, generation counters, and rate limits."""
+        from core.groq_client import usage_tracker
+        return usage_tracker.get_stats()
+
     def execute_terminal_command(self, command):
         """Allows direct execution of PowerShell / terminal commands."""
         return AssistantTools.run_shell_command(command)

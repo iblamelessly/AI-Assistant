@@ -1238,6 +1238,47 @@ window.replyConfirmation = function(choice) {
     settingsModal.classList.remove("active");
   });
 
+  // Modal open/close: Usage & Limits Dashboard
+  const usageModal = document.getElementById("usage-modal");
+  function refreshUsageModalUI() {
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_usage_stats) return;
+    window.pywebview.api.get_usage_stats().then((stats) => {
+      if (!stats) return;
+      document.getElementById("stat-prompt-tokens").textContent = (stats.prompt_tokens || 0).toLocaleString();
+      document.getElementById("stat-completion-tokens").textContent = (stats.completion_tokens || 0).toLocaleString();
+      document.getElementById("stat-total-tokens").textContent = (stats.total_tokens || 0).toLocaleString();
+      document.getElementById("stat-total-requests").textContent = (stats.total_requests || 0).toLocaleString();
+
+      document.getElementById("stat-ai-images").textContent = (stats.ai_images || 0).toLocaleString();
+      document.getElementById("stat-ai-videos").textContent = (stats.ai_videos || 0).toLocaleString();
+      document.getElementById("stat-documents").textContent = (stats.documents || 0).toLocaleString();
+
+      if (stats.rate_limit_remaining_tokens !== null && stats.rate_limit_limit_tokens) {
+        const pct = Math.max(0, Math.min(100, Math.round((stats.rate_limit_remaining_tokens / stats.rate_limit_limit_tokens) * 100)));
+        document.getElementById("stat-rate-tokens").textContent = `${stats.rate_limit_remaining_tokens.toLocaleString()} / ${stats.rate_limit_limit_tokens.toLocaleString()} (${pct}%)`;
+        document.getElementById("bar-rate-tokens").style.width = pct + "%";
+      } else {
+        document.getElementById("stat-rate-tokens").textContent = stats.rate_limit_remaining_tokens !== null ? stats.rate_limit_remaining_tokens.toLocaleString() : "Available (Standard Free Tier)";
+      }
+
+      if (stats.rate_limit_remaining_requests !== null && stats.rate_limit_limit_requests) {
+        const pct = Math.max(0, Math.min(100, Math.round((stats.rate_limit_remaining_requests / stats.rate_limit_limit_requests) * 100)));
+        document.getElementById("stat-rate-requests").textContent = `${stats.rate_limit_remaining_requests.toLocaleString()} / ${stats.rate_limit_limit_requests.toLocaleString()} (${pct}%)`;
+        document.getElementById("bar-rate-requests").style.width = pct + "%";
+      } else {
+        document.getElementById("stat-rate-requests").textContent = stats.rate_limit_remaining_requests !== null ? stats.rate_limit_remaining_requests.toLocaleString() : "Active (Optimal)";
+      }
+    }).catch((err) => console.warn("Failed to fetch usage stats:", err));
+  }
+
+  document.getElementById("btn-open-usage").addEventListener("click", () => {
+    refreshUsageModalUI();
+    if (usageModal) usageModal.classList.add("active");
+  });
+  document.getElementById("btn-close-usage").addEventListener("click", () => {
+    if (usageModal) usageModal.classList.remove("active");
+  });
+
   document.getElementById("btn-save-settings").addEventListener("click", () => {
     const provider = document.getElementById("setting-provider-select").value;
     const groqKey = document.getElementById("setting-groq-key").value.trim();

@@ -602,37 +602,61 @@ class AssistantTools:
     def create_presentation(cls, topic: str, theme: str = "jarvis_dark", output_path: str = None) -> dict:
         """Creates a professional 16:9 widescreen PowerPoint (.pptx) presentation with AI content synthesis."""
         from .document_generator import document_generator
-        return document_generator.create_presentation(topic, theme_name=theme or "jarvis_dark", output_path=output_path, groq_client=cls._groq_client)
+        from .groq_client import usage_tracker
+        res = document_generator.create_presentation(topic, theme_name=theme or "jarvis_dark", output_path=output_path, groq_client=cls._groq_client)
+        if res.get("success"):
+            usage_tracker.record_document()
+        return res
 
     @classmethod
     def create_document(cls, title: str, theme: str = "executive", output_path: str = None) -> dict:
         """Creates a professional Word (.docx) document with custom styling, callouts, and tables."""
         from .document_generator import document_generator
-        return document_generator.create_document(title, theme_name=theme or "executive", output_path=output_path, groq_client=cls._groq_client)
+        from .groq_client import usage_tracker
+        res = document_generator.create_document(title, theme_name=theme or "executive", output_path=output_path, groq_client=cls._groq_client)
+        if res.get("success"):
+            usage_tracker.record_document()
+        return res
 
     @classmethod
     def create_pdf(cls, title: str, theme: str = "modern_tech", output_path: str = None) -> dict:
         """Creates a publication-quality PDF (.pdf) report with executive layout and dynamic footers."""
         from .document_generator import document_generator
-        return document_generator.create_pdf(title, theme_name=theme or "modern_tech", output_path=output_path, groq_client=cls._groq_client)
+        from .groq_client import usage_tracker
+        res = document_generator.create_pdf(title, theme_name=theme or "modern_tech", output_path=output_path, groq_client=cls._groq_client)
+        if res.get("success"):
+            usage_tracker.record_document()
+        return res
 
     @classmethod
     def generate_ai_image(cls, prompt: str, style: str = "") -> dict:
         """Generates an AI image from a text prompt with optional style using FLUX/Pollinations."""
         from .ai_image import ai_image_engine
-        return ai_image_engine.generate_image(prompt, style=style)
+        from .groq_client import usage_tracker
+        res = ai_image_engine.generate_image(prompt, style=style)
+        if res.get("success"):
+            usage_tracker.record_image()
+        return res
 
     @classmethod
     def alter_ai_image(cls, image_path: str, instruction: str) -> dict:
         """Alters an existing image using AI style transfer, neural filters, and color grading."""
         from .ai_image import ai_image_engine
-        return ai_image_engine.alter_image(image_path, instruction)
+        from .groq_client import usage_tracker
+        res = ai_image_engine.alter_image(image_path, instruction)
+        if res.get("success"):
+            usage_tracker.record_image()
+        return res
 
     @classmethod
     def generate_ai_video(cls, prompt: str, seconds_per_scene: int = 3) -> dict:
         """Generates an AI multi-scene video from text prompt with FLUX frames and neural voiceover."""
         from .ai_video import ai_video_engine
-        return ai_video_engine.generate_video(prompt, seconds_per_scene=seconds_per_scene, groq_client=cls._groq_client)
+        from .groq_client import usage_tracker
+        res = ai_video_engine.generate_video(prompt, seconds_per_scene=seconds_per_scene, groq_client=cls._groq_client)
+        if res.get("success"):
+            usage_tracker.record_video()
+        return res
 
     @classmethod
     def execute_tool(cls, tool_name: str, *args) -> dict:

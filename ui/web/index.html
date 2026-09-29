@@ -55,6 +55,15 @@
           <span>Settings</span>
         </button>
 
+        <button class="footer-btn" id="btn-open-usage" title="Token & Generation Usage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          <span>Usage & Limits</span>
+        </button>
+
         <div class="system-stats-pill" id="stats-pill" title="Click to refresh system stats">
           <div class="stat-dot"></div>
           <span id="stats-summary-text">CPU: ... | RAM: ...</span>
@@ -374,6 +383,94 @@
 
         <div class="modal-footer-actions" style="margin-top:10px;">
           <button class="btn-save-profile" id="btn-save-settings">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  <!-- USAGE & LIMITS MODAL -->
+  <div class="modal-overlay" id="usage-modal">
+    <div class="modal-content" style="max-width: 560px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          <div>
+            <h3>Usage & Token Dashboard</h3>
+            <p>Real-time Groq API tokens, media counters, and rate limits.</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btn-close-usage">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- TOKEN USAGE -->
+        <div class="memory-card">
+          <h4>💬 Chat Token Consumption</h4>
+          <div class="profile-grid">
+            <div class="form-group">
+              <label>Prompt Tokens (In)</label>
+              <div id="stat-prompt-tokens" style="font-size: 18px; font-weight: 700; color: var(--text-main); padding-top: 4px;">0</div>
+            </div>
+            <div class="form-group">
+              <label>Completion Tokens (Out)</label>
+              <div id="stat-completion-tokens" style="font-size: 18px; font-weight: 700; color: var(--text-main); padding-top: 4px;">0</div>
+            </div>
+            <div class="form-group">
+              <label>Total Tokens Billed</label>
+              <div id="stat-total-tokens" style="font-size: 20px; font-weight: 800; color: var(--accent-primary); padding-top: 4px;">0</div>
+            </div>
+            <div class="form-group">
+              <label>Total Chat Calls</label>
+              <div id="stat-total-requests" style="font-size: 18px; font-weight: 700; color: var(--text-main); padding-top: 4px;">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GENERATIVE ASSETS -->
+        <div class="memory-card">
+          <h4>🎨 Generative AI Creation Counters</h4>
+          <div class="profile-grid">
+            <div class="form-group">
+              <label>🖼️ AI Images Created</label>
+              <div id="stat-ai-images" style="font-size: 18px; font-weight: 700; color: var(--accent-primary); padding-top: 4px;">0</div>
+            </div>
+            <div class="form-group">
+              <label>🎬 AI Videos Compiled</label>
+              <div id="stat-ai-videos" style="font-size: 18px; font-weight: 700; color: var(--accent-primary); padding-top: 4px;">0</div>
+            </div>
+            <div class="form-group span-full">
+              <label>📄 AI Documents Generated (PPT / Word / PDF)</label>
+              <div id="stat-documents" style="font-size: 18px; font-weight: 700; color: var(--text-main); padding-top: 4px;">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RATE LIMITS & QUOTA -->
+        <div class="memory-card">
+          <h4>⚡ Groq Cloud Rate Limit Status</h4>
+          <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: var(--text-muted);">Remaining Tokens (Per Minute):</span>
+                <span id="stat-rate-tokens" style="font-weight: 600;">--</span>
+              </div>
+              <div style="background: rgba(255,255,255,0.08); height: 8px; border-radius: 4px; overflow: hidden;">
+                <div id="bar-rate-tokens" style="background: var(--accent-primary); height: 100%; width: 100%; transition: width 0.3s;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: var(--text-muted);">Remaining Requests (Per Day/Minute):</span>
+                <span id="stat-rate-requests" style="font-weight: 600;">--</span>
+              </div>
+              <div style="background: rgba(255,255,255,0.08); height: 8px; border-radius: 4px; overflow: hidden;">
+                <div id="bar-rate-requests" style="background: #10b981; height: 100%; width: 100%; transition: width 0.3s;"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

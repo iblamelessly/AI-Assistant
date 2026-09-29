@@ -14,12 +14,88 @@ AVAILABLE_GROQ_MODELS = [
     {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B (Instant)"}
 ]
 
+class UsageTracker:
+    """Tracks token consumption, rate limit headers, and generative asset counts."""
+
+    def __init__(self):
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.total_tokens = 0
+        self.total_requests = 0
+        self.ai_images_count = 0
+        self.ai_videos_count = 0
+        self.documents_count = 0
+        self.rate_limit_remaining_tokens = None
+        self.rate_limit_limit_tokens = None
+        self.rate_limit_remaining_requests = None
+        self.rate_limit_limit_requests = None
+        self.rate_limit_reset_tokens = None
+        self.rate_limit_reset_requests = None
+
+    def record_chat_tokens(self, prompt: int, completion: int, total: int):
+        self.prompt_tokens += max(0, prompt)
+        self.completion_tokens += max(0, completion)
+        self.total_tokens += max(0, total)
+        self.total_requests += 1
+
+    def record_headers(self, headers: dict):
+        if not headers:
+            return
+        for k, v in headers.items():
+            kl = k.lower()
+            if kl == "x-ratelimit-remaining-tokens":
+                try: self.rate_limit_remaining_tokens = int(v)
+                except Exception: pass
+            elif kl == "x-ratelimit-limit-tokens":
+                try: self.rate_limit_limit_tokens = int(v)
+                except Exception: pass
+            elif kl == "x-ratelimit-remaining-requests":
+                try: self.rate_limit_remaining_requests = int(v)
+                except Exception: pass
+            elif kl == "x-ratelimit-limit-requests":
+                try: self.rate_limit_limit_requests = int(v)
+                except Exception: pass
+            elif kl == "x-ratelimit-reset-tokens":
+                self.rate_limit_reset_tokens = v
+            elif kl == "x-ratelimit-reset-requests":
+                self.rate_limit_reset_requests = v
+
+    def record_image(self):
+        self.ai_images_count += 1
+
+    def record_video(self):
+        self.ai_videos_count += 1
+
+    def record_document(self):
+        self.documents_count += 1
+
+    def get_stats(self) -> dict:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "total_requests": self.total_requests,
+            "ai_images": self.ai_images_count,
+            "ai_videos": self.ai_videos_count,
+            "documents": self.documents_count,
+            "rate_limit_remaining_tokens": self.rate_limit_remaining_tokens,
+            "rate_limit_limit_tokens": self.rate_limit_limit_tokens,
+            "rate_limit_remaining_requests": self.rate_limit_remaining_requests,
+            "rate_limit_limit_requests": self.rate_limit_limit_requests,
+            "rate_limit_reset_tokens": self.rate_limit_reset_tokens,
+            "rate_limit_reset_requests": self.rate_limit_reset_requests,
+        }
+
+# Global singleton usage tracker
+usage_tracker = UsageTracker()
+
 class GroqClient:
     """Client for Groq Cloud ultra-fast inference with dynamic model detection."""
 
     def __init__(self, api_key: str = "", model: str = DEFAULT_GROQ_MODEL):
         self.api_key = api_key.strip()
         self.model = model or DEFAULT_GROQ_MODEL
+        self.usage_tracker = usage_tracker
 
     def set_api_key(self, api_key: str):
         self.api_key = api_key.strip()
@@ -99,18 +175,27 @@ class GroqClient:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stream": True
+            "stream": True,
+            "stream_options": {"include_usage": True}
         }
 
         full_content = ""
+        prompt_tokens_used = 0
+        completion_tokens_used = 0
+        total_tokens_used = 0
+
         try:
             response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
+            if response.headers:
+                self.usage_tracker.record_headers(dict(response.headers))
 
             if response.status_code == 404 and self.model != "qwen/qwen3.8-27b":
                 # Automatically fallback to available working model
                 self.model = "qwen/qwen3.8-27b"
                 payload["model"] = self.model
                 response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
+                if response.headers:
+                    self.usage_tracker.record_headers(dict(response.headers))
 
             if response.status_code == 401:
                 err_msg = "❌ Error: Invalid Groq API Key. Please check your key in Settings."
@@ -138,9 +223,21 @@ class GroqClient:
                             if content:
                                 full_content += content
                                 on_chunk(content)
+                        if "usage" in chunk and chunk["usage"]:
+                            u = chunk["usage"]
+                            prompt_tokens_used = u.get("prompt_tokens", 0)
+                            completion_tokens_used = u.get("completion_tokens", 0)
+                            total_tokens_used = u.get("total_tokens", 0)
                     except Exception:
                         continue
 
+            if total_tokens_used == 0 and full_content:
+                # Estimate tokens if not provided in stream
+                completion_tokens_used = max(1, len(full_content) // 4)
+                prompt_tokens_used = sum(max(1, len(m.get("content", "")) // 4) for m in messages if isinstance(m.get("content"), str))
+                total_tokens_used = prompt_tokens_used + completion_tokens_used
+
+            self.usage_tracker.record_chat_tokens(prompt_tokens_used, completion_tokens_used, total_tokens_used)
             return full_content
 
         except requests.exceptions.ConnectionError:
@@ -166,6 +263,8 @@ class GroqClient:
         }
         try:
             response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
+            if response.headers:
+                self.usage_tracker.record_headers(dict(response.headers))
             if response.status_code == 404:
                 return None  # Signal caller to try next model
             if response.status_code == 401:
@@ -197,6 +296,10 @@ class GroqClient:
                                 on_chunk(content)
                     except Exception:
                         continue
+            if full_content:
+                comp_est = max(1, len(full_content) // 4)
+                prompt_est = 200
+                self.usage_tracker.record_chat_tokens(prompt_est, comp_est, prompt_est + comp_est)
             return full_content
         except Exception as e:
             err_msg = f"❌ Error during streaming: {str(e)}"
@@ -324,8 +427,17 @@ Return ONLY a valid JSON object matching this schema. Do not include markdown fo
             }
             try:
                 resp = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, timeout=45)
+                if resp.headers:
+                    self.usage_tracker.record_headers(dict(resp.headers))
                 if resp.status_code == 200:
                     data = resp.json()
+                    usage = data.get("usage", {})
+                    if usage:
+                        self.usage_tracker.record_chat_tokens(
+                            usage.get("prompt_tokens", 0),
+                            usage.get("completion_tokens", 0),
+                            usage.get("total_tokens", 0)
+                        )
                     raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                     if raw_content:
                         parsed = json.loads(raw_content)
