@@ -557,6 +557,57 @@ class AssistantEngine:
 
         return None
 
+    def _unified_ai_dispatch(self, user_message: str) -> dict | None:
+        """
+        Unified Cognitive AI Dispatcher.
+        Leverages Groq LLM intelligence to classify complex, nuanced, or creative commands
+        that rule-based regex patterns might miss.
+        """
+        if not self.groq_client or not self.groq_client.is_configured():
+            return None
+
+        classification = self.groq_client.classify_intent(user_message)
+        if not classification or not isinstance(classification, dict):
+            return None
+
+        intent = classification.get("intent")
+        params = classification.get("params", {})
+
+        if intent == "image_generate":
+            p = params.get("prompt") or user_message
+            st = params.get("style", "")
+            res = AssistantTools.generate_ai_image(p, style=st)
+            return {"tool": "generate_ai_image", "param": p, "result": res}
+
+        elif intent == "video_generate":
+            p = params.get("prompt") or user_message
+            res = AssistantTools.generate_ai_video(p)
+            return {"tool": "generate_ai_video", "param": p, "result": res}
+
+        elif intent == "image_alter" and self.latest_media and "path" in self.latest_media:
+            st = params.get("style") or "enhance"
+            target_path = self.latest_media["path"]
+            if os.path.exists(target_path):
+                res = AssistantTools.alter_ai_image(target_path, st)
+                return {"tool": "alter_ai_image", "param": st, "result": res}
+
+        elif intent == "document_create":
+            topic = params.get("topic") or user_message
+            doc_type = (params.get("doc_type") or "pptx").lower()
+            theme = params.get("theme") or ""
+
+            if "ppt" in doc_type or "presentation" in doc_type or "slide" in doc_type:
+                res = AssistantTools.create_presentation(topic, theme=theme or "jarvis_dark")
+                return {"tool": "create_presentation", "param": topic, "result": res}
+            elif "docx" in doc_type or "word" in doc_type or "doc" in doc_type:
+                res = AssistantTools.create_document(topic, theme=theme or "executive")
+                return {"tool": "create_document", "param": topic, "result": res}
+            elif "pdf" in doc_type:
+                res = AssistantTools.create_pdf(topic, theme=theme or "modern_tech")
+                return {"tool": "create_pdf", "param": topic, "result": res}
+
+        return None
+
     def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None):
         """
         Processes a chat turn with:
@@ -705,6 +756,8 @@ class AssistantEngine:
 
         # 5. Check for fast-path direct tool execution
         fast_action = self._detect_fast_intent(user_message)
+        if not fast_action:
+            fast_action = self._unified_ai_dispatch(user_message)
         tool_action_performed = None
 
         if fast_action:

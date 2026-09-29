@@ -449,5 +449,71 @@ Return ONLY a valid JSON object matching this schema. Do not include markdown fo
                     pass
             except Exception as e:
                 pass
+    def classify_intent(self, user_message: str) -> dict | None:
+        """
+        Uses an ultra-fast LLM to classify user message intent into structured JSON.
+        Acts as the intelligent brain dispatcher across all JARVIS capabilities.
+        """
+        if not self.is_configured() or not user_message or not user_message.strip():
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        system_instruction = (
+            "You are JARVIS's central cognitive routing dispatcher. "
+            "Analyze the user's input and determine if they want to execute an action. "
+            "Categories:\n"
+            "- 'image_generate': user wants an AI-generated image (prompt, optional style)\n"
+            "- 'image_alter': user wants to alter an existing image with a style (cyberpunk, anime, sketch, vintage, etc.)\n"
+            "- 'video_generate': user wants an AI video produced from text (prompt)\n"
+            "- 'document_create': user wants a presentation (pptx), document (docx), or report (pdf) created (topic, doc_type, optional theme)\n"
+            "- 'chat': general question, conversation, explanation, or coding help\n\n"
+            "Return valid JSON matching:\n"
+            "{\n"
+            "  \"intent\": \"image_generate\" | \"image_alter\" | \"video_generate\" | \"document_create\" | \"chat\",\n"
+            "  \"params\": {\n"
+            "     \"prompt\": \"...\",\n"
+            "     \"style\": \"...\",\n"
+            "     \"topic\": \"...\",\n"
+            "     \"doc_type\": \"pptx\" | \"docx\" | \"pdf\",\n"
+            "     \"theme\": \"...\"\n"
+            "  }\n"
+            "}"
+        )
+
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_message}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
+            "max_tokens": 150
+        }
+
+        try:
+            resp = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, timeout=6)
+            if resp.headers:
+                self.usage_tracker.record_headers(dict(resp.headers))
+            if resp.status_code == 200:
+                data = resp.json()
+                usage = data.get("usage", {})
+                if usage:
+                    self.usage_tracker.record_chat_tokens(
+                        usage.get("prompt_tokens", 0),
+                        usage.get("completion_tokens", 0),
+                        usage.get("total_tokens", 0)
+                    )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if content:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and "intent" in parsed:
+                        return parsed
+        except Exception:
+            pass
         return None
 
