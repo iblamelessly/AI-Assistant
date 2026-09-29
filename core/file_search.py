@@ -177,7 +177,11 @@ class FileSearchEngine:
             target_exts.append(explicit_ext)
 
         # 2. Detect and strip natural language file type / extension in query (e.g. "python file", "word doc")
+        # EXCEPTION: If the user says "create/make/generate/draw/paint/alter/edit ... image/video", do NOT classify as file search!
+        is_creative_query = bool(re.search(r"\b(?:create|createa|generate|make|draw|paint|render|imagine|produce|alter|edit)\b", raw_query, re.IGNORECASE))
         for type_name, exts in self.TYPE_EXTENSIONS.items():
+            if is_creative_query and type_name in ["image", "picture", "photo", "video", "movie", "sound", "song", "music"]:
+                continue
             pattern = r"\b" + re.escape(type_name) + r"(?:\s+(?:files?|documents?|scripts?|presentations?|sheets?|data))?\b"
             if re.search(pattern, q_clean):
                 if not target_exts:
@@ -632,12 +636,13 @@ class FileSearchEngine:
 
         chosen_match = None
 
-        # 1. Digits: "1", "2", "3"
-        digit_match = re.search(r"\b([1-9])\b", r)
-        if digit_match:
-            idx = int(digit_match.group(1)) - 1
-            if 0 <= idx < len(matches):
-                chosen_match = matches[idx]
+        # 1. Digits: "1", "2", "3" (only if reply is short, e.g. "1", "option 1", "#1", "file 1")
+        if re.search(r"^(?:option\s+|#|file\s+|number\s+)?([1-9])$", r):
+            digit_match = re.search(r"([1-9])", r)
+            if digit_match:
+                idx = int(digit_match.group(1)) - 1
+                if 0 <= idx < len(matches):
+                    chosen_match = matches[idx]
 
         # 2. Ordinals: "first", "second", "third"
         if not chosen_match:
@@ -650,19 +655,19 @@ class FileSearchEngine:
         # 3. Matching by parent folder name or full path substring
         if not chosen_match:
             for m in matches:
-                p_lower = m["path"].lower()
-                parent_lower = m["parent"].lower()
-                name_lower = m["name"].lower()
+                p_lower = m.get("path", "").lower()
+                parent_lower = m.get("parent", "").lower()
+                name_lower = m.get("name", "").lower()
 
-                if parent_lower in r or name_lower in r or r in p_lower:
+                if (parent_lower and parent_lower in r) or (name_lower and name_lower in r) or (len(r) > 3 and r in p_lower):
                     chosen_match = m
                     break
 
         # 4. Matching chip format e.g. "1. AI-Assistant/main.py"
         if not chosen_match:
             for i, m in enumerate(matches):
-                chip_txt = f"{i+1}. {m['parent']}/{m['name']}".lower()
-                if chip_txt in r or m["display"].lower() in r:
+                chip_txt = f"{i+1}. {m.get('parent','')}/{m.get('name','')}".lower()
+                if (chip_txt and chip_txt in r) or (m.get("display") and m["display"].lower() in r):
                     chosen_match = m
                     break
 

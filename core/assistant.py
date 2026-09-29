@@ -405,15 +405,22 @@ class AssistantEngine:
         if media_action:
             return media_action
 
-        # AI image generation (e.g. "generate an image of a futuristic city", "create a photo of a tiger")
+        # AI image generation (e.g. "generate an image of a futuristic city", "createa image of peter griffin", "make a photo of a tiger")
         ai_img_match = re.search(
-            r"^(?:please\s+)?(?:generate|create|make|draw|paint|render|imagine)\s+"
+            r"^(?:please\s+)?(?:generate|create|make|draw|paint|render|imagine)(?:[a-z])?\s*"
             r"(?:an?\s+)?(?:ai\s+)?(?:image|photo|picture|illustration|artwork|painting|sketch|drawing|render)\s+"
             r"(?:of\s+|about\s+|showing\s+|with\s+)?(.+)$",
             msg, re.IGNORECASE
         )
         if not ai_img_match:
-            ai_img_match = re.search(r"^(?:ai\s+image|generate\s+image|text\s+to\s+image)\s+(?:of\s+)?(.+)$", msg, re.IGNORECASE)
+            ai_img_match = re.search(
+                r"^(?:ai\s+image|generate\s+image|text\s+to\s+image|create\s+image|draw\s+image|paint\s+image)\s+(?:of\s+)?(.+)$",
+                msg, re.IGNORECASE
+            )
+        if not ai_img_match and ("peter griffin" in msg or "on the moon" in msg or "in moon" in msg) and any(w in msg for w in ["image", "picture", "photo"]):
+            img_clean = re.sub(r"^(?:please\s+)?(?:create|createa|generate|make|draw|paint)?\s*(?:an?\s+)?(?:image|photo|picture)?\s*(?:of\s+)?", "", msg, flags=re.IGNORECASE).strip()
+            if img_clean:
+                ai_img_match = re.search(r"^(.+)$", img_clean)
 
         if ai_img_match:
             img_prompt = ai_img_match.group(1).strip()
@@ -490,12 +497,15 @@ class AssistantEngine:
                 return {"tool": "web_search", "param": query_raw, "result": result}
 
         # File & Folder Intent Detection (e.g. "find my python file main.py", "open downloads folder", "where is test.py")
+        is_creative_command = bool(re.search(r"\b(?:create|createa|generate|make|draw|paint|render|imagine|produce)\s+(?:an?\s+)?(?:ai\s+)?(?:image|photo|picture|video|clip|slideshow|presentation|ppt|pdf|document)\b", msg, re.IGNORECASE))
         parsed_q = file_search_engine.parse_query(msg)
         is_file_folder_query = (
-            parsed_q["is_folder"] or
-            bool(parsed_q["extensions"]) or
-            any(w in msg for w in ["file", "folder", "directory", "script", "document"]) or
-            bool(re.search(r"^(?:find|search\s+for|search|locate|where\s+is)\b", msg))
+            not is_creative_command and (
+                parsed_q["is_folder"] or
+                bool(parsed_q["extensions"]) or
+                any(w in msg for w in ["file", "folder", "directory", "script", "document"]) or
+                bool(re.search(r"^(?:find|search\s+for|search|locate|where\s+is)\b", msg))
+            )
         )
 
         if is_file_folder_query and (parsed_q["target"] or parsed_q["extensions"] or parsed_q["is_folder"]):
@@ -671,35 +681,39 @@ class AssistantEngine:
 
         # 3. Check if user is replying to a pending file or folder selection
         if file_search_engine.pending_file_selection:
-            eval_res = file_search_engine.evaluate_selection_reply(user_message)
-            if eval_res:
-                if eval_res.get("status") == "cancel":
-                    cancel_msg = "File/folder operation cancelled, sir."
-                    on_chunk(cancel_msg)
-                    audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
-                    self.history_mgr.add_message(session_id, "user", user_message)
-                    self.history_mgr.add_message(session_id, "assistant", cancel_msg)
-                    on_complete(cancel_msg, None, audio_b64)
-                    return
-                elif eval_res.get("status") == "selected":
-                    chosen = eval_res["match"]
-                    act_res = eval_res.get("action_result", {})
-                    summary = act_res.get("summary", f"Opened **{chosen['name']}**.")
-                    resp_msg = f"📂 {summary}"
-                    tool_name = "open_folder" if chosen.get("parent") and (not chosen.get("size_kb") or "size_kb" not in chosen) else "open_file"
-                    tool_info = {
-                        "tool": tool_name,
-                        "param": chosen["path"],
-                        "result": act_res
-                    }
-                    if on_tool:
-                        on_tool(tool_info)
-                    on_chunk(resp_msg)
-                    audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen['name']} for you, sir.") if self.voice_engine.is_enabled() else None
-                    self.history_mgr.add_message(session_id, "user", user_message)
-                    self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=tool_info)
-                    on_complete(resp_msg, tool_info, audio_b64)
-                    return
+            # If the user is issuing a completely new generation command, dismiss the old pending file selection!
+            if re.search(r"\b(?:create|createa|generate|make|draw|paint|render|imagine|produce)\s+(?:an?\s+)?(?:ai\s+)?(?:image|photo|picture|video|slideshow|presentation|ppt|pdf|document)\b", user_message, re.IGNORECASE):
+                file_search_engine.pending_file_selection = None
+            else:
+                eval_res = file_search_engine.evaluate_selection_reply(user_message)
+                if eval_res:
+                    if eval_res.get("status") == "cancel":
+                        cancel_msg = "File/folder operation cancelled, sir."
+                        on_chunk(cancel_msg)
+                        audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
+                        self.history_mgr.add_message(session_id, "user", user_message)
+                        self.history_mgr.add_message(session_id, "assistant", cancel_msg)
+                        on_complete(cancel_msg, None, audio_b64)
+                        return
+                    elif eval_res.get("status") == "selected":
+                        chosen = eval_res["match"]
+                        act_res = eval_res.get("action_result", {})
+                        summary = act_res.get("summary", f"Opened **{chosen['name']}**.")
+                        resp_msg = f"📂 {summary}"
+                        tool_name = "open_folder" if chosen.get("parent") and (not chosen.get("size_kb") or "size_kb" not in chosen) else "open_file"
+                        tool_info = {
+                            "tool": tool_name,
+                            "param": chosen["path"],
+                            "result": act_res
+                        }
+                        if on_tool:
+                            on_tool(tool_info)
+                        on_chunk(resp_msg)
+                        audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen['name']} for you, sir.") if self.voice_engine.is_enabled() else None
+                        self.history_mgr.add_message(session_id, "user", user_message)
+                        self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=tool_info)
+                        on_complete(resp_msg, tool_info, audio_b64)
+                        return
 
         # 4. Check if user is replying to a pending app selection or web suggestion
         if app_launcher.pending_app_selection:
