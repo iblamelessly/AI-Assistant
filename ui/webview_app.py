@@ -5,6 +5,10 @@ import mimetypes
 import time
 import threading
 from pathlib import Path
+
+# Ensure Microsoft Edge WebView2 allows audio autoplay without transient gesture expiration
+os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--autoplay-policy=no-user-gesture-required"
+
 import webview
 
 from core.memory import MemoryManager
@@ -54,13 +58,19 @@ class AssistantApi:
             "memory": self.memory_mgr.get_memory(),
             "system_stats": AssistantTools.get_system_stats(),
             "voice_enabled": self.voice_engine.is_enabled() if self.voice_engine else False,
+            "voice_name": getattr(self.voice_engine, "voice", "en-GB-RyanNeural"),
             "config": self.config_mgr.get_all(),
             "usage_stats": usage_tracker.get_stats()
         }
 
     def send_message(self, user_message, session_id, attachments=None):
-        """Asynchronously streams response tokens to the UI via evaluate_js."""
+        """Asynchronously streams response tokens to the UI via evaluate_js with dynamic activity states."""
         def run_stream():
+            def on_status(status_text, status_type="thinking", detail=""):
+                if self._window:
+                    js_code = f"window.onStatusUpdate({json.dumps(status_text)}, {json.dumps(status_type)}, {json.dumps(detail)});"
+                    self._window.evaluate_js(js_code)
+
             def on_chunk(token):
                 if self._window:
                     js_code = f"window.onStreamChunk({json.dumps(token)});"
@@ -82,7 +92,8 @@ class AssistantApi:
                 on_chunk=on_chunk,
                 on_complete=on_complete,
                 on_tool=on_tool,
-                attachments=attachments
+                attachments=attachments,
+                on_status=on_status
             )
 
         thread = threading.Thread(target=run_stream, daemon=True)
@@ -94,6 +105,22 @@ class AssistantApi:
             self.voice_engine.set_enabled(bool(enabled))
             return self.voice_engine.is_enabled()
         return False
+
+    def set_voice(self, voice_name):
+        """Updates preferred voice in engine and config."""
+        if self.voice_engine:
+            self.voice_engine.set_voice(voice_name)
+            self.config_mgr.set("voice_name", voice_name)
+            return True
+        return False
+
+    def test_voice(self, voice_name=None):
+        """Synthesizes a test phrase in English to verify audible speech output."""
+        if voice_name and self.voice_engine:
+            self.voice_engine.set_voice(voice_name)
+        sample = "Good day, sir. JARVIS speech synthesis is online and speaking in English."
+        b64 = self.voice_engine.generate_speech_base64(sample) if self.voice_engine else None
+        return {"success": bool(b64), "audio_b64": b64, "text": sample}
 
     def get_sessions(self):
         return self.history_mgr.list_sessions()
@@ -230,6 +257,8 @@ class AssistantApi:
             self.engine.permission_guard.require_destructive_confirm = bool(settings["confirm_sensitive_actions"])
         if "confirm_personal_data_access" in settings:
             self.engine.permission_guard.require_privacy_confirm = bool(settings["confirm_personal_data_access"])
+        if "voice_name" in settings:
+            self.set_voice(settings["voice_name"])
 
         return {"status": "success", "config": self.config_mgr.get_all()}
 

@@ -96,6 +96,7 @@ class AssistantEngine:
             f"PERMANENT USER PROFILE:\n"
             f"{memory_json}\n\n"
             "HUMAN-LIKE SENSE & SAFETY RULES:\n"
+            "0. Language & Speech: You must ALWAYS speak, converse, and reply in natural, fluent English at all times. All your verbal speech will be vocalized out loud in English. Even if the user uses informal slang or other languages, always answer in clear, articulate English unless explicitly commanded to translate.\n"
             "1. Clarify Ambiguity: If the user asks to delete or wipe something without specifying which copy, "
             "ask whether they mean the original, a backup copy, or duplicates before acting.\n"
             "2. Safety First: Never execute destructive file deletions or kill critical system tasks without explicitly "
@@ -618,19 +619,39 @@ class AssistantEngine:
 
         return None
 
-    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None):
+    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None, on_status=None):
         """
         Processes a chat turn with:
         1. Human confirmation check (Yes/No response evaluation)
         2. Ambiguity & duplicate target detection
         3. Fast-path & autonomous tool execution
-        4. Groq (Llama 3.3 70B) or Ollama streaming
-        5. Neural Voice synthesis
-        6. Media attachments & autonomous photo/video processing
+        4. Dynamic activity state notifications (Analyzing, Thinking, Creating, Executing, Speaking)
+        5. Groq (Llama 3.3 70B) or Ollama streaming
+        6. Neural Voice synthesis in English
+        7. Media attachments & autonomous photo/video processing
         """
+        def set_status(title: str, state_type: str = "thinking", detail: str = ""):
+            if on_status and callable(on_status):
+                try:
+                    on_status(title, state_type, detail)
+                except Exception:
+                    pass
+
+        # Determine initial context-aware state based on user message
+        msg_lower = (user_message or "").lower().strip()
+        if any(k in msg_lower for k in ["create", "generate", "presentation", "powerpoint", "ppt", "document", "docx", "word", "pdf", "image", "photo", "picture", "video", "draw", "render", "slide", "slideshow", "write a code", "write a script"]):
+            set_status("Creating...", "creating", "Preparing generative engine and designing structure...")
+        elif any(k in msg_lower for k in ["analyze", "analysis", "inspect", "examine", "check", "audit", "search", "find", "locate", "scan", "list", "read", "status"]):
+            set_status("Analyzing...", "analyzing", "Inspecting system context & files...")
+        elif any(k in msg_lower for k in ["open", "launch", "start", "run", "powershell", "terminal", "kill", "close", "cmd"]):
+            set_status("Executing...", "executing", "Preparing system execution...")
+        else:
+            set_status("Thinking...", "thinking", "Analyzing your request...")
+
         # Record attached media if provided
         if attachments and isinstance(attachments, list) and len(attachments) > 0:
             self.latest_media = attachments[-1]
+            set_status("Analyzing...", "analyzing", f"Inspecting attached media ({self.latest_media.get('name', 'file')})...")
         # 1. Check if user is replying to a pending confirmation
         if self.permission_guard.has_pending():
             eval_res = self.permission_guard.evaluate_user_reply(user_message)
@@ -638,6 +659,7 @@ class AssistantEngine:
                 if eval_res.get("confirmed") is True:
                     # User approved! Execute the pending action
                     action_data = eval_res["action"]
+                    set_status("Executing...", "executing", f"Executing confirmed action: {action_data['tool']}...")
                     tool_res = AssistantTools.execute_tool(action_data["tool"], *action_data["args"])
                     tool_info = {
                         "tool": action_data["tool"],
@@ -650,6 +672,7 @@ class AssistantEngine:
                     confirm_msg = f"✓ Operation confirmed and executed successfully, sir.\nResult: {tool_res.get('summary', 'Done.')}"
                     on_chunk(confirm_msg)
 
+                    set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                     audio_b64 = self.voice_engine.generate_speech_base64(confirm_msg) if self.voice_engine.is_enabled() else None
                     self.history_mgr.add_message(session_id, "user", user_message)
                     self.history_mgr.add_message(session_id, "assistant", confirm_msg, tool_info=tool_info)
@@ -658,6 +681,7 @@ class AssistantEngine:
                 elif eval_res.get("confirmed") is False:
                     cancel_msg = eval_res.get("message", "Operation cancelled, sir.")
                     on_chunk(cancel_msg)
+                    set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                     audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
                     self.history_mgr.add_message(session_id, "user", user_message)
                     self.history_mgr.add_message(session_id, "assistant", cancel_msg)
@@ -670,9 +694,11 @@ class AssistantEngine:
                     return
 
         # 2. Check for ambiguity on deletion/modification commands
+        set_status("Analyzing...", "analyzing", "Checking safety and ambiguity guard...")
         ambiguity_q = self.permission_guard.detect_ambiguity_or_duplicates(user_message)
         if ambiguity_q:
             on_chunk(ambiguity_q)
+            set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             audio_b64 = self.voice_engine.generate_speech_base64(ambiguity_q) if self.voice_engine.is_enabled() else None
             self.history_mgr.add_message(session_id, "user", user_message)
             self.history_mgr.add_message(session_id, "assistant", ambiguity_q)
@@ -830,6 +856,14 @@ class AssistantEngine:
                 on_complete(ask_msg, None, audio_b64)
                 return
             elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
+                t_tool = fast_action.get("tool")
+                if t_tool in ["create_presentation", "create_document", "create_pdf"]:
+                    set_status("Creating...", "creating", f"Generating slides and formatting '{fast_action.get('param', 'document')}'...")
+                elif t_tool in ["generate_ai_image", "alter_ai_image", "generate_ai_video", "edit_image", "edit_video"]:
+                    set_status("Creating...", "creating", "Synthesizing generative visual media...")
+                else:
+                    set_status("Executing...", "executing", f"Executing system action: {t_tool}...")
+
                 tool_action_performed = fast_action
                 if on_tool:
                     on_tool(fast_action)
@@ -865,6 +899,7 @@ class AssistantEngine:
 
                 on_chunk(resp_msg)
                 speech_text = summary_text
+                set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                 audio_b64 = self.voice_engine.generate_speech_base64(speech_text) if self.voice_engine.is_enabled() else None
                 self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=fast_action)
@@ -906,15 +941,18 @@ class AssistantEngine:
             ]
             if image_paths:
                 # Vision Q&A — send actual image bytes to Groq's vision model
+                set_status("Analyzing...", "analyzing", "Inspecting attached media with Vision AI...")
                 full_response = self.groq_client.stream_vision_chat(
                     user_text=user_message,
                     image_paths=image_paths,
                     on_chunk=on_chunk
                 )
             else:
+                set_status("Thinking...", "thinking", f"Reasoning with {self.model}...")
                 full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
         else:
             # Fallback to local Ollama
+            set_status("Thinking...", "thinking", f"Reasoning with local Ollama ({self.ollama_model})...")
             try:
                 response = requests.post(
                     self.chat_url,
@@ -975,6 +1013,12 @@ class AssistantEngine:
                 return
 
             # Execute permitted action
+            if t_name in ["create_presentation", "create_document", "create_pdf", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
+                set_status("Creating...", "creating", f"Creating content with {t_name}...")
+            elif t_name in ["search_files", "search_folders", "web_search", "inspect_media", "read_file", "list_directory"]:
+                set_status("Analyzing...", "analyzing", f"Inspecting system data with {t_name}...")
+            else:
+                set_status("Executing...", "executing", f"Executing system action: {t_name}...")
             t_result = AssistantTools.execute_tool(t_name, *args)
             if t_result.get("file_doubt"):
                 matches = t_result.get("matches", [])
@@ -1073,6 +1117,7 @@ class AssistantEngine:
         # 9. Voice Synthesis
         audio_b64 = None
         if self.voice_engine.is_enabled():
+            set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             try:
                 speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
                 audio_b64 = self.voice_engine.generate_speech_base64(speech_text)

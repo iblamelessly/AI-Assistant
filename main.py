@@ -46,10 +46,14 @@ def run_cli():
 
         print("\nJarvis: ", end="", flush=True)
 
+        def on_status(status_text, status_type="thinking", detail=""):
+            # Real-time activity indicator for CLI
+            pass
+
         def on_chunk(token):
             print(token, end="", flush=True)
 
-        def on_complete(full_resp, tool_info):
+        def on_complete(full_resp, tool_info, audio_b64=None):
             print("\n")
 
         def on_tool(tool_info):
@@ -61,7 +65,8 @@ def run_cli():
             user_message=user_input,
             on_chunk=on_chunk,
             on_complete=on_complete,
-            on_tool=on_tool
+            on_tool=on_tool,
+            on_status=on_status
         )
 
 def main():

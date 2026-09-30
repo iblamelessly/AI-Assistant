@@ -25,7 +25,7 @@ class VoiceEngine:
         self.voice = voice_name
 
     def clean_text_for_speech(self, text: str) -> str:
-        """Strips markdown code blocks, tags, URLs, and symbols for clean spoken voice."""
+        """Strips markdown code blocks, tags, URLs, and symbols for clean spoken voice in English."""
         if not text:
             return ""
 
@@ -33,8 +33,16 @@ class VoiceEngine:
         cleaned = re.sub(r"```[\s\S]*?```", " [Code output omitted] ", text)
         # Remove tool tags [ACTION: ...] or [TOOL: ...]
         cleaned = re.sub(r"\[(?:ACTION|TOOL):\s*.*?\]", "", cleaned)
+        # Remove suggestions [Suggestion: ...]
+        cleaned = re.sub(r"\[Suggestion:[\s\S]*?\]", "", cleaned)
+        # Remove document tags [DOCUMENT: ...]
+        cleaned = re.sub(r"\[DOCUMENT:[\s\S]*?\]", "", cleaned)
+        # Remove media tags [MEDIA: ...]
+        cleaned = re.sub(r"\[MEDIA:[\s\S]*?\]", "", cleaned)
         # Remove markdown headers and formatting
         cleaned = re.sub(r"[#*_~`>]", "", cleaned)
+        # Remove bullet markers
+        cleaned = re.sub(r"^\s*[-*•]\s+", "", cleaned, flags=re.MULTILINE)
         # Remove URLs
         cleaned = re.sub(r"https?://\S+", "link", cleaned)
         # Normalize whitespace
@@ -50,14 +58,17 @@ class VoiceEngine:
                     summary += (" " + s)
                 else:
                     break
+            if not summary.strip():
+                summary = cleaned[:320]
             cleaned = summary.strip() + " I have displayed the full details on your screen, sir."
 
         return cleaned
 
     def generate_speech_base64(self, text: str) -> str:
         """
-        Generates MP3 audio using edge-tts and returns a base64 string
+        Generates MP3 audio using edge-tts (English neural voices) and returns a base64 string
         suitable for immediate HTML5 audio playback in the desktop UI.
+        Falls back to local SAPI5 pyttsx3 in English if edge-tts is unavailable.
         """
         if not self.enabled:
             return None
@@ -88,10 +99,20 @@ class VoiceEngine:
         except Exception as e:
             print(f"[VoiceEngine] edge-tts error: {e}")
 
-        # Offline fallback: pyttsx3
+        # Offline fallback: pyttsx3 (strictly English voice)
         try:
             import pyttsx3
             engine = pyttsx3.init()
+            # Select an English voice
+            try:
+                for v in engine.getProperty("voices"):
+                    v_name = v.name.lower()
+                    if "en" in str(getattr(v, "languages", "")).lower() or "english" in v_name or "david" in v_name or "zira" in v_name:
+                        engine.setProperty("voice", v.id)
+                        break
+            except Exception:
+                pass
+
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                 temp_wav = tf.name
 
