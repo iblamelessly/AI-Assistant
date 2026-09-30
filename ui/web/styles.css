@@ -681,6 +681,242 @@ textarea, input {
 }
 
 /* ========================================================
+   DYNAMIC ACTIVITY STATUS WIDGET (Analyzing / Thinking / Creating / Executing / Speaking)
+   ======================================================== */
+.assistant-activity-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid var(--activity-border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  margin-bottom: 6px;
+  position: relative;
+  overflow: hidden;
+  animation: activityFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.assistant-activity-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--activity-color, #10a37f), transparent);
+  animation: activityShimmer 2s infinite linear;
+}
+
+@keyframes activityShimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+@keyframes activityFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* State Icon & Pulse Orb */
+.activity-orb {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--activity-bg, rgba(16, 163, 127, 0.14));
+  border: 1px solid var(--activity-border, rgba(16, 163, 127, 0.35));
+  flex-shrink: 0;
+}
+
+.activity-orb-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--activity-color, #10a37f);
+  opacity: 0.6;
+  animation: rotateRing 4s linear infinite;
+}
+
+@keyframes rotateRing {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.activity-orb-icon {
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.activity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.activity-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--activity-color, #ececec);
+  letter-spacing: 0.2px;
+}
+
+.activity-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+}
+
+.activity-wave span {
+  display: block;
+  width: 3px;
+  height: 6px;
+  background-color: var(--activity-color, #10a37f);
+  border-radius: 2px;
+  animation: waveAnim 1.2s infinite ease-in-out;
+}
+
+.activity-wave span:nth-child(1) { animation-delay: 0s; }
+.activity-wave span:nth-child(2) { animation-delay: 0.2s; }
+.activity-wave span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes waveAnim {
+  0%, 100% { height: 4px; opacity: 0.35; }
+  50% { height: 13px; opacity: 1; }
+}
+
+.activity-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* State Themes */
+/* 1. Thinking */
+.assistant-activity-card.state-thinking,
+.active-task-pill.state-thinking {
+  --activity-color: #c084fc;
+  --activity-bg: rgba(192, 132, 252, 0.14);
+  --activity-border: rgba(192, 132, 252, 0.38);
+}
+
+/* 2. Analyzing */
+.assistant-activity-card.state-analyzing,
+.active-task-pill.state-analyzing {
+  --activity-color: #38bdf8;
+  --activity-bg: rgba(56, 189, 248, 0.14);
+  --activity-border: rgba(56, 189, 248, 0.38);
+}
+
+/* 3. Creating */
+.assistant-activity-card.state-creating,
+.active-task-pill.state-creating {
+  --activity-color: #34d399;
+  --activity-bg: rgba(52, 211, 153, 0.14);
+  --activity-border: rgba(52, 211, 153, 0.4);
+}
+
+/* 4. Executing */
+.assistant-activity-card.state-executing,
+.active-task-pill.state-executing {
+  --activity-color: #fbbf24;
+  --activity-bg: rgba(251, 191, 36, 0.14);
+  --activity-border: rgba(251, 191, 36, 0.4);
+}
+
+/* 5. Searching */
+.assistant-activity-card.state-searching,
+.active-task-pill.state-searching {
+  --activity-color: #818cf8;
+  --activity-bg: rgba(129, 140, 248, 0.14);
+  --activity-border: rgba(129, 140, 248, 0.4);
+}
+
+/* 6. Speaking */
+.assistant-activity-card.state-speaking,
+.active-task-pill.state-speaking {
+  --activity-color: #22d3ee;
+  --activity-bg: rgba(34, 211, 238, 0.14);
+  --activity-border: rgba(34, 211, 238, 0.4);
+}
+
+/* Live compact status pill during streaming */
+.active-task-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background-color: var(--activity-bg, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--activity-border, rgba(255, 255, 255, 0.15));
+  color: var(--activity-color, #ececec);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  animation: activityFadeIn 0.2s ease-out;
+}
+
+.active-task-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--activity-color, #10a37f);
+  box-shadow: 0 0 8px var(--activity-color, #10a37f);
+  animation: pulseDot 1s infinite alternate;
+}
+
+@keyframes pulseDot {
+  from { opacity: 0.4; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+.speaking-voice-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  color: #22d3ee;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 8px;
+  animation: activityFadeIn 0.2s ease-out;
+}
+
+#btn-toggle-voice.speaking {
+  color: #38bdf8 !important;
+  border-color: rgba(56, 189, 248, 0.7) !important;
+  background-color: rgba(56, 189, 248, 0.2) !important;
+  animation: speakingPulse 1.2s infinite ease-in-out;
+}
+
+@keyframes speakingPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }
+  50% { box-shadow: 0 0 14px 4px rgba(56, 189, 248, 0.6); }
+}
+
+/* ========================================================
    INPUT CONTAINER
    ======================================================== */
 .input-container {

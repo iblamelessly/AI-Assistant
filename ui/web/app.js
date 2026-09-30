@@ -557,6 +557,10 @@ function onAppReady() {
       voiceEnabled = data.voice_enabled;
       updateVoiceButtonUI();
     }
+    const voiceSelect = document.getElementById("setting-voice-select");
+    if (voiceSelect && (data.voice_name || (data.config && data.config.voice_name))) {
+      voiceSelect.value = data.voice_name || data.config.voice_name;
+    }
 
     // Populate memory modal
     populateMemoryUI(data.memory);
@@ -723,6 +727,196 @@ function appendMessageBubble(role, content, toolInfo = null, attachments = null)
   return bubble;
 }
 
+// ── DYNAMIC ACTIVITY STATUS & ENGLISH VOICE SYSTEM ────────────────────
+let currentStatusText = "Thinking...";
+let currentStatusType = "thinking";
+let currentStatusDetail = "Jarvis is processing your request...";
+
+function getStatusIconHtml(stateType) {
+  switch (stateType) {
+    case "creating":
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>`;
+    case "analyzing":
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`;
+    case "executing":
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
+    case "searching":
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
+    case "speaking":
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    case "thinking":
+    default:
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"></path><path d="M9 21h6"></path></svg>`;
+  }
+}
+
+function renderActivityCardHtml(title, stateType, detail) {
+  const iconSvg = getStatusIconHtml(stateType);
+  return `
+    <div class="assistant-activity-card state-${escapeHtml(stateType)}" id="current-activity-card">
+      <div class="activity-orb">
+        <span class="activity-orb-ring"></span>
+        <span class="activity-orb-icon">${iconSvg}</span>
+      </div>
+      <div class="activity-content">
+        <div class="activity-header">
+          <span class="activity-title">${escapeHtml(title)}</span>
+          <span class="activity-wave">
+            <span></span><span></span><span></span>
+          </span>
+        </div>
+        <div class="activity-subtitle">${escapeHtml(detail || "Jarvis is processing your request...")}</div>
+      </div>
+    </div>
+  `;
+}
+
+function primeAudio() {
+  try {
+    const audioEl = document.getElementById("jarvis-audio");
+    if (audioEl) {
+      const p = audioEl.play();
+      if (p !== undefined) {
+        p.then(() => audioEl.pause()).catch(() => {});
+      }
+    }
+  } catch (e) {}
+}
+
+function speakWithBrowserSynthesis(text, onCompleteCallback) {
+  if (!window.speechSynthesis || !text) {
+    if (onCompleteCallback) onCompleteCallback();
+    return;
+  }
+  try {
+    window.speechSynthesis.cancel();
+    const clean = text
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/\[(?:ACTION|TOOL|DOCUMENT|MEDIA|Suggestion):[\s\S]*?\]/g, "")
+      .replace(/[#*_~`>]/g, "")
+      .trim();
+
+    if (!clean) {
+      if (onCompleteCallback) onCompleteCallback();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(clean.slice(0, 350));
+    utterance.lang = "en-US";
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const enVoice = voices.find(v => (v.lang && (v.lang.startsWith("en-GB") || v.lang.startsWith("en-US") || v.lang.startsWith("en"))));
+    if (enVoice) {
+      utterance.voice = enVoice;
+    }
+
+    utterance.onend = () => {
+      if (onCompleteCallback) onCompleteCallback();
+    };
+    utterance.onerror = () => {
+      if (onCompleteCallback) onCompleteCallback();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn("Browser speech synthesis error:", err);
+    if (onCompleteCallback) onCompleteCallback();
+  }
+}
+
+function playSpeech(audioB64, fallbackText) {
+  if (!voiceEnabled) return;
+
+  const voiceBtn = document.getElementById("btn-toggle-voice");
+  const orbLabel = document.getElementById("orb-status-text");
+  if (voiceBtn) voiceBtn.classList.add("speaking");
+  if (orbLabel) orbLabel.textContent = "🎙️ Speaking in English...";
+
+  const resetVoiceUI = () => {
+    if (voiceBtn) voiceBtn.classList.remove("speaking");
+    if (orbLabel) orbLabel.textContent = "Ready for command...";
+  };
+
+  if (audioB64) {
+    try {
+      const audioEl = document.getElementById("jarvis-audio");
+      if (audioEl) {
+        let mime = "audio/mp3";
+        if (audioB64.startsWith("UklGR")) {
+          mime = "audio/wav";
+        }
+        audioEl.src = `data:${mime};base64,${audioB64}`;
+
+        let finished = false;
+        const handleEnd = () => {
+          if (!finished) {
+            finished = true;
+            resetVoiceUI();
+          }
+        };
+
+        audioEl.onended = handleEnd;
+        audioEl.onerror = () => {
+          if (!finished) {
+            finished = true;
+            console.warn("Audio element error, falling back to Web Speech API");
+            speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
+          }
+        };
+
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn("Audio play() blocked by policy, using browser synthesis:", err);
+            speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
+          });
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn("Audio playback error:", err);
+    }
+  }
+
+  // Fallback to browser Web Speech API
+  speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
+}
+
+// Real-time status update from backend engine (Analyzing / Thinking / Creating / Executing / Speaking)
+window.onStatusUpdate = function(statusText, statusType, detailText) {
+  currentStatusText = statusText || "Thinking...";
+  currentStatusType = statusType || "thinking";
+  currentStatusDetail = detailText || "";
+
+  const orbLabel = document.getElementById("orb-status-text");
+  if (orbLabel) orbLabel.textContent = currentStatusText;
+
+  if (currentAssistantBubble) {
+    const existingCard = currentAssistantBubble.querySelector("#current-activity-card");
+    if (existingCard) {
+      existingCard.className = `assistant-activity-card state-${currentStatusType}`;
+      const orbIcon = existingCard.querySelector(".activity-orb-icon");
+      if (orbIcon) orbIcon.innerHTML = getStatusIconHtml(currentStatusType);
+      const titleEl = existingCard.querySelector(".activity-title");
+      if (titleEl) titleEl.textContent = currentStatusText;
+      const subEl = existingCard.querySelector(".activity-subtitle");
+      if (subEl) subEl.textContent = currentStatusDetail || "Jarvis is working on your request...";
+    } else if (!currentStreamBuffer) {
+      currentAssistantBubble.innerHTML = renderActivityCardHtml(currentStatusText, currentStatusType, currentStatusDetail);
+    } else {
+      const activePill = currentAssistantBubble.querySelector(".active-task-pill");
+      if (activePill) {
+        activePill.className = `active-task-pill state-${currentStatusType}`;
+        const label = activePill.querySelector(".active-task-label");
+        if (label) label.textContent = currentStatusText;
+      }
+    }
+    scrollToBottom();
+  }
+};
+
 // Live tool execution callback during stream
 window.onToolExecuted = function(toolInfo) {
   if (currentAssistantBubble) {
@@ -732,12 +926,14 @@ window.onToolExecuted = function(toolInfo) {
   }
 };
 
-// Streaming chunk handler
+// Streaming chunk handler showing real-time task badge + streamed content
 window.onStreamChunk = function(chunk) {
   currentStreamBuffer += chunk;
   if (currentAssistantBubble) {
     const extracted = extractSuggestions(currentStreamBuffer);
-    currentAssistantBubble.innerHTML = renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText))) + '<span class="typing-cursor"></span>';
+    const pillHtml = `<div class="active-task-pill state-${currentStatusType}"><span class="active-task-dot"></span><span class="active-task-label">${escapeHtml(currentStatusText)}</span></div><br/>`;
+    const contentHtml = renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText))) + '<span class="typing-cursor"></span>';
+    currentAssistantBubble.innerHTML = pillHtml + contentHtml;
     loadAsyncMediaElements(currentAssistantBubble);
     scrollToBottom();
   }
@@ -780,20 +976,8 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
     loadAsyncMediaElements(currentAssistantBubble);
   }
 
-  // Play Neural Audio Speech if enabled
-  if (audioB64 && voiceEnabled) {
-    try {
-      const audioEl = document.getElementById("jarvis-audio");
-      if (audioEl) {
-        audioEl.src = "data:audio/mp3;base64," + audioB64;
-        audioEl.play().catch(e => {
-          console.warn("Audio playback failed:", e);
-        });
-      }
-    } catch (err) {
-      console.warn("Audio play error:", err);
-    }
-  }
+  // Speak back response in English
+  playSpeech(audioB64, fullResponse);
 
   currentAssistantBubble = null;
   currentStreamBuffer = "";
@@ -807,12 +991,9 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
   window.pywebview.api.get_memory().then((mem) => {
     populateMemoryUI(mem);
   });
-
-  const orbLabel = document.getElementById("orb-status-text");
-  if (orbLabel) orbLabel.textContent = "Ready for command...";
 };
 
-// Send Message
+// Send Message with dynamic activity status initialization
 function sendMessage() {
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
@@ -825,6 +1006,9 @@ function sendMessage() {
   isStreaming = true;
   document.getElementById("btn-send").disabled = true;
 
+  // Prime audio on interaction so WebView2 never blocks speech
+  primeAudio();
+
   const attachmentsToSend = [...pendingAttachments];
   pendingAttachments = [];
   renderAttachmentPreviews();
@@ -832,7 +1016,26 @@ function sendMessage() {
   // Append user bubble
   appendMessageBubble("user", userText, null, attachmentsToSend);
 
-  // Create empty assistant bubble with cursor
+  // Determine initial real-time status state based on user input
+  if (/(create|generate|make|draw|paint|render|presentation|ppt|powerpoint|document|docx|word|pdf|slides|image|video|design|slideshow|write a script|write a code)/i.test(userText)) {
+    currentStatusText = "Creating...";
+    currentStatusType = "creating";
+    currentStatusDetail = "Designing and generating content...";
+  } else if (/(analyze|analysis|inspect|examine|check|audit|search|find|locate|scan|list|read|where|lookup|look up)/i.test(userText)) {
+    currentStatusText = "Analyzing...";
+    currentStatusType = "analyzing";
+    currentStatusDetail = "Analyzing request & scanning system...";
+  } else if (/(open|launch|start|run|powershell|terminal|kill|close|cmd|execute)/i.test(userText)) {
+    currentStatusText = "Executing...";
+    currentStatusType = "executing";
+    currentStatusDetail = "Preparing system execution...";
+  } else {
+    currentStatusText = "Thinking...";
+    currentStatusType = "thinking";
+    currentStatusDetail = "Jarvis is reasoning through your request...";
+  }
+
+  // Create assistant bubble with dynamic activity widget instead of blinking cursor bar
   const container = document.getElementById("messages-container");
   const row = document.createElement("div");
   row.className = "message-row assistant";
@@ -843,7 +1046,7 @@ function sendMessage() {
 
   const bubble = document.createElement("div");
   bubble.className = "message-bubble";
-  bubble.innerHTML = '<span class="typing-cursor"></span>';
+  bubble.innerHTML = renderActivityCardHtml(currentStatusText, currentStatusType, currentStatusDetail);
 
   row.appendChild(avatar);
   row.appendChild(bubble);
@@ -852,6 +1055,9 @@ function sendMessage() {
   currentAssistantBubble = bubble;
   currentStreamBuffer = "";
   scrollToBottom();
+
+  const orbLabel = document.getElementById("orb-status-text");
+  if (orbLabel) orbLabel.textContent = currentStatusText;
 
   // Call Python API
   window.pywebview.api.send_message(userText, currentSessionId, attachmentsToSend).catch((err) => {
@@ -1411,6 +1617,8 @@ window.replyConfirmation = function(choice) {
     const ollamaUrl = document.getElementById("setting-ollama-url").value.trim();
     const ollamaModel = document.getElementById("setting-model-select").value;
     const personaName = document.getElementById("setting-persona-name").value.trim();
+    const voiceSelect = document.getElementById("setting-voice-select");
+    const voiceName = voiceSelect ? voiceSelect.value : "en-GB-RyanNeural";
     const confirmActions = document.getElementById("setting-confirm-actions").checked;
     const confirmPrivacy = document.getElementById("setting-confirm-privacy").checked;
 
@@ -1421,14 +1629,48 @@ window.replyConfirmation = function(choice) {
       ollama_url: ollamaUrl,
       ollama_model: ollamaModel,
       persona_name: personaName,
+      voice_name: voiceName,
       confirm_sensitive_actions: confirmActions,
       confirm_personal_data_access: confirmPrivacy
     }).then(() => {
       settingsModal.classList.remove("active");
-      alert("Settings saved! Jarvis will now use " + (provider === 'groq' ? 'Groq Llama 3.3 70B' : 'Local Ollama') + ".");
+      alert("Settings saved! Jarvis will now use " + (provider === 'groq' ? 'Groq Cloud' : 'Local Ollama') + " with English voice (" + voiceName + ").");
       window.location.reload();
     });
   });
+
+  // Test English Neural Voice Output
+  const btnTestVoice = document.getElementById("btn-test-voice");
+  if (btnTestVoice) {
+    btnTestVoice.addEventListener("click", () => {
+      const vSelect = document.getElementById("setting-voice-select");
+      const chosenVoice = vSelect ? vSelect.value : "en-GB-RyanNeural";
+      btnTestVoice.textContent = "🔊 Speaking...";
+      btnTestVoice.disabled = true;
+      primeAudio();
+
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.test_voice) {
+        window.pywebview.api.test_voice(chosenVoice).then(res => {
+          if (res && res.audio_b64) {
+            playSpeech(res.audio_b64, res.text);
+          } else {
+            speakWithBrowserSynthesis(res ? res.text : "Good day, sir. JARVIS speech synthesis is online.");
+          }
+          btnTestVoice.textContent = "🔊 Test Voice";
+          btnTestVoice.disabled = false;
+        }).catch(err => {
+          console.warn("Test voice error:", err);
+          speakWithBrowserSynthesis("Good day, sir. JARVIS speech synthesis is online and speaking in English.");
+          btnTestVoice.textContent = "🔊 Test Voice";
+          btnTestVoice.disabled = false;
+        });
+      } else {
+        speakWithBrowserSynthesis("Good day, sir. JARVIS speech synthesis is online and speaking in English.");
+        btnTestVoice.textContent = "🔊 Test Voice";
+        btnTestVoice.disabled = false;
+      }
+    });
+  }
 
   // Media Attachment button & file picker
   const btnAttach = document.getElementById("btn-attach");

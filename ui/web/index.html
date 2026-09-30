@@ -372,6 +372,33 @@
           <input type="text" id="setting-persona-name" value="Jarvis" />
         </div>
 
+        <!-- ENGLISH NEURAL VOICE & SPEECH SETTINGS -->
+        <div class="memory-card" style="margin-top: 6px;">
+          <h4 style="font-size:12px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
+            <span>🎙️ English Neural Voice Engine</span>
+            <span id="voice-status-badge" style="font-size:11px; color:#10b981; font-weight:600;">ACTIVE</span>
+          </h4>
+          <div class="form-group" style="margin-top:8px;">
+            <label>Spoken Voice Accent & Tone</label>
+            <div style="display:flex; gap:8px;">
+              <select id="setting-voice-select" style="flex:1;">
+                <option value="en-GB-RyanNeural">British Male (Jarvis - Sophisticated)</option>
+                <option value="en-US-GuyNeural">American Male (Clear & Professional)</option>
+                <option value="en-US-ChristopherNeural">American Male (Deep & Authoritative)</option>
+                <option value="en-US-JennyNeural">American Female (Friendly & Expressive)</option>
+                <option value="en-GB-SoniaNeural">British Female (Elegant)</option>
+                <option value="en-IN-PrabhatNeural">Indian English Male (Natural)</option>
+              </select>
+              <button type="button" class="btn-save-profile" id="btn-test-voice" title="Test Voice Output" style="white-space:nowrap; padding:6px 14px; font-size:12px; background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.4); cursor:pointer;">
+                🔊 Test Voice
+              </button>
+            </div>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">
+            Jarvis vocalizes responses in fluent English with Microsoft Neural TTS and automatic browser audio fallback.
+          </div>
+        </div>
+
         <!-- HUMAN SAFETY & PERMISSION GUARDS -->
         <div class="memory-card" style="margin-top: 6px;">
           <h4 style="font-size:12px; color:var(--text-main);">🛡️ Human-in-the-Loop Safety Guards</h4>
