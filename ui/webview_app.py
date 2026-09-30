@@ -119,8 +119,17 @@ class AssistantApi:
         if voice_name and self.voice_engine:
             self.voice_engine.set_voice(voice_name)
         sample = "Good day, sir. JARVIS speech synthesis is online and speaking in English."
+        if self.voice_engine:
+            self.voice_engine.speak_aloud(sample)
         b64 = self.voice_engine.generate_speech_base64(sample) if self.voice_engine else None
         return {"success": bool(b64), "audio_b64": b64, "text": sample}
+
+    def speak_aloud(self, text: str):
+        """Speaks any text aloud through the laptop speakers using JARVIS's British neural voice."""
+        if self.voice_engine:
+            self.voice_engine.speak_aloud(text)
+            return True
+        return False
 
     def get_sessions(self):
         return self.history_mgr.list_sessions()

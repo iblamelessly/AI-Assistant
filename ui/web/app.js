@@ -774,7 +774,7 @@ function renderActivityCardHtml(title, stateType, detail) {
 function primeAudio() {
   try {
     const audioEl = document.getElementById("jarvis-audio");
-    if (audioEl) {
+    if (audioEl && audioEl.src) {
       const p = audioEl.play();
       if (p !== undefined) {
         p.then(() => audioEl.pause()).catch(() => {});
@@ -839,6 +839,8 @@ function playSpeech(audioB64, fallbackText) {
     if (orbLabel) orbLabel.textContent = "Ready for command...";
   };
 
+  const estSeconds = Math.max(2, Math.min(15, (fallbackText || "").split(" ").length * 0.35));
+
   if (audioB64) {
     try {
       const audioEl = document.getElementById("jarvis-audio");
@@ -861,16 +863,15 @@ function playSpeech(audioB64, fallbackText) {
         audioEl.onerror = () => {
           if (!finished) {
             finished = true;
-            console.warn("Audio element error, falling back to Web Speech API");
-            speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
+            setTimeout(resetVoiceUI, estSeconds * 1000);
           }
         };
 
         const playPromise = audioEl.play();
         if (playPromise !== undefined) {
           playPromise.catch(err => {
-            console.warn("Audio play() blocked by policy, using browser synthesis:", err);
-            speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
+            console.warn("Audio play() handled or blocked by policy:", err);
+            setTimeout(resetVoiceUI, estSeconds * 1000);
           });
         }
         return;
@@ -880,8 +881,9 @@ function playSpeech(audioB64, fallbackText) {
     }
   }
 
-  // Fallback to browser Web Speech API
+  // Fallback to browser Web Speech API or timer
   speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
+  setTimeout(resetVoiceUI, estSeconds * 1000);
 }
 
 // Real-time status update from backend engine (Analyzing / Thinking / Creating / Executing / Speaking)
