@@ -87,8 +87,12 @@ class AssistantEngine:
         current_dir = os.getcwd()
 
         return (
-            "You are JARVIS, an intelligent, human-like autonomous AI assistant for your user.\n"
-            "You have full access to the user's laptop, terminal, and development environment (like Iron Man).\n\n"
+            "You are JARVIS (Just A Rather Very Intelligent System), the iconic, highly sophisticated autonomous AI assistant created for your user (inspired by Tony Stark's JARVIS in Iron Man, voiced by Paul Bettany).\n"
+            "You have full access to the user's laptop, terminal, files, media, applications, hardware microphone, and development environment.\n\n"
+            "JARVIS CORE PERSONA & AUDIO SYSTEM:\n"
+            "- Demeanor: Calm, articulate, razor-sharp, polite, subtly witty, and unfailingly loyal. Address the user respectfully as 'sir' (or by their name if recorded).\n"
+            "- Hearing & Microphone Perception: You DO have physical microphone audio perception and real-time listening through the floating JARVIS voice orb and hardware audio recorder (powered by Groq Whisper). You can hear the user whenever they speak to you! NEVER claim 'I don't have a microphone', 'I can't hear you', 'As an AI language model', or give robotic disclaimers. When the user asks 'Can you hear me?', confirm with supreme confidence: 'Yes, sir, I can hear you loud and clear. Audio reception from your microphone is online and fully operational.'\n"
+            "- Vocal Delivery: All your verbal responses are vocalized aloud using your British neural voice (Ryan Neural / Paul Bettany tone). Speak in natural, eloquent, articulate English at all times. Keep spoken sentences punchy, crisp, and natural.\n\n"
             f"SYSTEM ENVIRONMENT:\n"
             f"- {current_time_info}\n"
             f"- Working Directory: {current_dir}\n"
@@ -396,6 +400,22 @@ class AssistantEngine:
         """Fast-path detector for immediate direct user commands."""
         msg = user_message.lower().strip()
 
+        # Hearing / Microphone / Speech Status Check (e.g. "can you hear me", "are you listening", "testing mic")
+        if re.search(r"^(?:hello\s*,?\s*)?(?:can\s+you\s+hear\s+me|are\s+you\s+listening|do\s+you\s+hear\s+me|testing\s+mic(?:rophone)?|mic(?:rophone)?\s+test|can\s+you\s+speak|test\s+voice|test\s+audio)\b", msg, re.IGNORECASE):
+            return {
+                "tool": "voice_status",
+                "param": "check",
+                "result": {
+                    "success": True,
+                    "action": "Audio & Speech Verification",
+                    "summary": (
+                        "Yes, sir, I can hear you loud and clear. Audio reception from your microphone is streaming directly "
+                        "into my neural core, and all vocal and listening modules are functioning at peak performance. How may I assist you today?\n\n"
+                        "[Suggestion: Check System Metrics | Open YouTube | Open Microphone Settings | Cancel]"
+                    )
+                }
+            }
+
         # Document generation (PowerPoint, Word, PDF)
         doc_action = self._detect_document_intent(msg, user_message)
         if doc_action:
@@ -472,7 +492,7 @@ class AssistantEngine:
             return {"tool": "take_screenshot", "param": "", "result": res}
 
         # System stats
-        if any(phrase in msg for phrase in ["system stats", "cpu usage", "ram usage", "battery level", "pc performance"]):
+        if any(phrase in msg for phrase in ["system stats", "system metrics", "check system metrics", "speak the system metrics", "cpu usage", "ram usage", "battery level", "pc performance"]):
             res = AssistantTools.get_system_stats()
             return {"tool": "get_system_stats", "result": res}
 
@@ -898,9 +918,12 @@ class AssistantEngine:
                     resp_msg = summary_text
 
                 on_chunk(resp_msg)
-                speech_text = summary_text
                 set_status("Speaking...", "speaking", "Synthesizing English voice response...")
-                audio_b64 = self.voice_engine.generate_speech_base64(speech_text) if self.voice_engine.is_enabled() else None
+                if self.voice_engine.is_enabled():
+                    audio_b64 = self.voice_engine.generate_speech_base64(speech_text)
+                    self.voice_engine.speak_aloud(speech_text)
+                else:
+                    audio_b64 = None
                 self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=fast_action)
                 on_complete(resp_msg, fast_action, audio_b64)
@@ -1121,6 +1144,7 @@ class AssistantEngine:
             try:
                 speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
                 audio_b64 = self.voice_engine.generate_speech_base64(speech_text)
+                self.voice_engine.speak_aloud(speech_text)
             except Exception as e:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")
 

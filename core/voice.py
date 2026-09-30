@@ -29,6 +29,15 @@ class VoiceEngine:
         if not text:
             return ""
 
+        # Normalize unicode hyphens, quotes, and symbols that can cause speech synthesis to choke
+        replacements = {
+            "\u2011": "-", "\u2010": "-", "\u2012": "-", "\u2013": "-", "\u2014": "--",
+            "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+            "\u2026": "...", "\u00a0": " ", "\u2022": " ", "⚡": "", "✓": "", "✕": "", "🎙️": ""
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+
         # Remove code blocks ```...```
         cleaned = re.sub(r"```[\s\S]*?```", " [Code output omitted] ", text)
         # Remove tool tags [ACTION: ...] or [TOOL: ...]
@@ -128,3 +137,76 @@ class VoiceEngine:
             print(f"[VoiceEngine] pyttsx3 fallback error: {e}")
 
         return None
+
+    def speak_aloud(self, text: str, block: bool = False):
+        """
+        Synthesizes and vocalizes speech directly through the Windows OS audio system
+        using winmm MCI playback (or pyttsx3 fallback) to guarantee audible output on laptop speakers.
+        """
+        if not self.enabled or not text:
+            return
+
+        clean_text = self.clean_text_for_speech(text)
+        if not clean_text:
+            return
+
+        def _worker():
+            with self._lock:
+                try:
+                    import ctypes
+                    mci = ctypes.windll.winmm.mciSendStringW
+                    alias = f"jarvis_voice_{os.getpid()}"
+                    mci(f"close {alias}", None, 0, None)
+
+                    temp_mp3 = tempfile.mktemp(suffix=".mp3")
+                    import edge_tts
+                    communicate = edge_tts.Communicate(clean_text, self.voice)
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(communicate.save(temp_mp3))
+                    loop.close()
+
+                    if os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 0:
+                        mci(f'open "{temp_mp3}" type mpegvideo alias {alias}', None, 0, None)
+                        mci(f"play {alias} wait", None, 0, None)
+                        mci(f"close {alias}", None, 0, None)
+                        try:
+                            os.remove(temp_mp3)
+                        except Exception:
+                            pass
+                        return
+                except Exception as e:
+                    print(f"[VoiceEngine] speak_aloud edge-tts error: {e}")
+
+                # Offline fallback to SAPI5 pyttsx3
+                try:
+                    import pyttsx3
+                    engine = pyttsx3.init()
+                    try:
+                        for v in engine.getProperty("voices"):
+                            v_name = v.name.lower()
+                            if "en" in str(getattr(v, "languages", "")).lower() or "english" in v_name or "david" in v_name or "zira" in v_name:
+                                engine.setProperty("voice", v.id)
+                                break
+                    except Exception:
+                        pass
+                    engine.say(clean_text)
+                    engine.runAndWait()
+                except Exception as e:
+                    print(f"[VoiceEngine] speak_aloud pyttsx3 error: {e}")
+
+        if block:
+            _worker()
+        else:
+            threading.Thread(target=_worker, daemon=True).start()
+
+    def stop(self):
+        """Stops any currently playing audio playback."""
+        try:
+            import ctypes
+            mci = ctypes.windll.winmm.mciSendStringW
+            alias = f"jarvis_voice_{os.getpid()}"
+            mci(f"stop {alias}", None, 0, None)
+            mci(f"close {alias}", None, 0, None)
+        except Exception:
+            pass
