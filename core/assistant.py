@@ -6,15 +6,17 @@ import requests
 from .tools import AssistantTools
 from .voice import VoiceEngine
 from .config import ConfigManager
-from .groq_client import GroqClient, AVAILABLE_GROQ_MODELS
+from .groq_client import GroqClient, AVAILABLE_GROQ_MODELS, DEFAULT_GROQ_MODEL
 from .permissions import PermissionGuard
 from .app_launcher import app_launcher
 from .file_search import file_search_engine
+from .model_router import SuperAIRouter
 
 class AssistantEngine:
     """
     Unified Autonomous Agent Engine supporting:
-    - Ultra-fast Groq Cloud (Llama 3.3 70B) & Local Ollama
+    - Super AI dynamic multi-model ensemble (GPT-OSS 120B, Qwen 3.8 27B, GPT-OSS 20B)
+    - Ultra-fast Groq Cloud & Local Ollama
     - Human-like Permission & Ambiguity Guard
     - Full Laptop & Terminal Control
     - Neural Voice Synthesis
@@ -32,7 +34,7 @@ class AssistantEngine:
 
         self.groq_client = GroqClient(
             api_key=self.config_mgr.get("groq_api_key", ""),
-            model=self.config_mgr.get("groq_model", "llama-3.3-70b-versatile")
+            model=self.config_mgr.get("groq_model", DEFAULT_GROQ_MODEL)
         )
         AssistantTools.set_groq_client(self.groq_client)
 
@@ -61,16 +63,16 @@ class AssistantEngine:
     def get_installed_models(self):
         """Fetch available models based on active provider."""
         if self.provider == "groq":
-            return [m["id"] for m in self.groq_client.get_dynamic_models()]
+            return self.groq_client.get_dynamic_models()
         else:
             try:
                 r = requests.get(f"{self.ollama_url}/api/tags", timeout=3)
                 if r.status_code == 200:
                     data = r.json()
-                    return [m["name"] for m in data.get("models", [])]
+                    return [{"id": m["name"], "name": m["name"]} for m in data.get("models", [])]
             except Exception:
                 pass
-            return [self.ollama_model]
+            return [{"id": self.ollama_model, "name": self.ollama_model}]
 
     def set_model(self, model_name: str):
         if self.provider == "groq":
@@ -920,13 +922,13 @@ class AssistantEngine:
                 on_chunk(resp_msg)
                 set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                 if self.voice_engine.is_enabled():
-                    audio_b64 = self.voice_engine.generate_speech_base64(speech_text)
-                    self.voice_engine.speak_aloud(speech_text)
+                    audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=True)
                 else:
                     audio_b64 = None
                 self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=fast_action)
-                on_complete(resp_msg, fast_action, audio_b64)
+                model_used = getattr(self.groq_client, "last_model_used", self.model)
+                on_complete(resp_msg, fast_action, audio_b64, model_used)
                 return
             else:
                 tool_action_performed = fast_action
@@ -971,7 +973,12 @@ class AssistantEngine:
                     on_chunk=on_chunk
                 )
             else:
-                set_status("Thinking...", "thinking", f"Reasoning with {self.model}...")
+                if self.model == "super-ai":
+                    target_model, reason = SuperAIRouter.classify_prompt(user_message, attachments=attachments)
+                    friendly_name = SuperAIRouter.get_friendly_name(target_model)
+                    set_status("Thinking...", "thinking", f"⚡ Super AI routing to {friendly_name}...")
+                else:
+                    set_status("Thinking...", "thinking", f"Reasoning with {self.model}...")
                 full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
         else:
             # Fallback to local Ollama
@@ -1029,10 +1036,11 @@ class AssistantEngine:
                 on_chunk(ask_confirm_msg)
                 full_response += ask_confirm_msg
 
-                audio_b64 = self.voice_engine.generate_speech_base64(inspection["question"]) if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.synthesize_and_speak(inspection["question"], play_audio=True) if self.voice_engine.is_enabled() else None
                 self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", full_response)
-                on_complete(full_response, None, audio_b64)
+                model_used = getattr(self.groq_client, "last_model_used", self.model)
+                on_complete(full_response, None, audio_b64, model_used)
                 return
 
             # Execute permitted action
@@ -1143,8 +1151,7 @@ class AssistantEngine:
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             try:
                 speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
-                audio_b64 = self.voice_engine.generate_speech_base64(speech_text)
-                self.voice_engine.speak_aloud(speech_text)
+                audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=True)
             except Exception as e:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")
 
@@ -1152,4 +1159,5 @@ class AssistantEngine:
         self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
         self.history_mgr.add_message(session_id, "assistant", clean_display, tool_info=tool_action_performed)
 
-        on_complete(clean_display, tool_action_performed, audio_b64)
+        model_used = getattr(self.groq_client, "last_model_used", self.model)
+        on_complete(clean_display, tool_action_performed, audio_b64, model_used)

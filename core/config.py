@@ -5,7 +5,7 @@ import threading
 DEFAULT_CONFIG = {
     "provider": "groq",  # "groq" or "ollama"
     "groq_api_key": "",
-    "groq_model": "llama-3.3-70b-versatile",
+    "groq_model": "super-ai",
     "ollama_model": "qwen3:1.7b",
     "ollama_url": "http://localhost:11434",
     "voice_enabled": True,

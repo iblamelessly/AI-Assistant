@@ -3,16 +3,14 @@ import requests
 from pathlib import Path
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b"
+DEFAULT_GROQ_MODEL = "super-ai"
 
 AVAILABLE_GROQ_MODELS = [
-    {"id": "qwen/qwen3.8-27b", "name": "Qwen 3.8 27B (Recommended - Fast & Intelligent)"},
-    {"id": "openai/gpt-oss-120b", "name": "OpenAI GPT-OSS 120B (Deep Reasoning)"},
-    {"id": "groq/compound-mini", "name": "Groq Compound Mini (Fast Autonomous Agent)"},
-    {"id": "groq/compound", "name": "Groq Compound (Agent System)"},
-    {"id": "openai/gpt-oss-20b", "name": "OpenAI GPT-OSS 20B (Instant)"},
-    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Meta)"},
-    {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B (Instant)"}
+    {"id": "super-ai", "name": "⚡ Super AI (Auto-Select Best Model)"},
+    {"id": "openai/gpt-oss-120b", "name": "OpenAI GPT-OSS 120B (Deep Reasoning & Analysis)"},
+    {"id": "qwen/qwen3.8-27b", "name": "Qwen 3.8 27B (Code & Technical Specialist)"},
+    {"id": "openai/gpt-oss-20b", "name": "OpenAI GPT-OSS 20B (Ultra-Fast Conversational)"},
+    {"id": "allam-2-7b", "name": "Allam 2 7B (Multilingual)"}
 ]
 
 class UsageTracker:
@@ -147,6 +145,8 @@ class GroqClient:
         self.api_key = api_key.strip()
         self.model = model or DEFAULT_GROQ_MODEL
         self.usage_tracker = usage_tracker
+        self.last_model_used = self.model
+        self.last_router_reason = "Initialized"
 
     def set_api_key(self, api_key: str):
         self.api_key = api_key.strip()
@@ -156,8 +156,9 @@ class GroqClient:
 
     def get_dynamic_models(self) -> list:
         """Dynamically fetch models available to the current Groq API key."""
+        featured = list(AVAILABLE_GROQ_MODELS)
         if not self.is_configured():
-            return AVAILABLE_GROQ_MODELS
+            return featured
         try:
             r = requests.get(
                 "https://api.groq.com/openai/v1/models",
@@ -166,16 +167,18 @@ class GroqClient:
             )
             if r.status_code == 200:
                 data = r.json().get("data", [])
-                models = []
+                api_model_ids = {item.get("id", "") for item in data}
+                result = [m for m in featured if m["id"] == "super-ai" or m["id"] in api_model_ids]
                 for item in data:
                     mid = item.get("id", "")
                     if mid and "whisper" not in mid and "guard" not in mid and "orpheus" not in mid:
-                        models.append({"id": mid, "name": mid})
-                if models:
-                    return models
+                        if not any(m["id"] == mid for m in result):
+                            result.append({"id": mid, "name": mid})
+                if result:
+                    return result
         except Exception:
             pass
-        return AVAILABLE_GROQ_MODELS
+        return featured
 
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key) > 10)
@@ -206,28 +209,41 @@ class GroqClient:
         except Exception as e:
             return {"success": False, "error": f"Could not connect to Groq: {e}"}
 
-    def stream_chat(self, messages: list, on_chunk, temperature: float = 0.6, max_tokens: int = 2048) -> str:
+    def stream_chat(self, messages: list, on_chunk, temperature: float = 0.6, max_tokens: int = 2048, model_override: str = None) -> str:
         """
         Streams completions from Groq using Server-Sent Events (SSE).
-        Invokes on_chunk(token) for real-time typewriter display.
-        Returns the full response string.
+        Dynamically routes queries when model is 'super-ai' and cascades through
+        fallback models if rate limits (HTTP 429) or errors occur.
         """
         if not self.is_configured():
             err_msg = "⚠️ Groq API key is missing. Please enter your free key in Settings (get it at console.groq.com)."
             on_chunk(err_msg)
             return err_msg
 
+        from .model_router import SuperAIRouter
+
+        # Extract last user prompt for routing
+        user_prompt = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                user_prompt = m.get("content", "")
+                break
+
+        # Determine target model
+        target_model = model_override or self.model
+        reason = "Manual selection"
+        if target_model == "super-ai" or not target_model:
+            target_model, reason = SuperAIRouter.classify_prompt(user_prompt)
+
+        self.last_model_used = target_model
+        self.last_router_reason = reason
+
+        # Cascade fallback chain
+        fallback_chain = SuperAIRouter.get_fallback_chain(target_model)
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "stream": True,
-            "stream_options": {"include_usage": True}
         }
 
         full_content = ""
@@ -235,70 +251,82 @@ class GroqClient:
         completion_tokens_used = 0
         total_tokens_used = 0
 
-        try:
-            response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
-            if response.headers:
-                self.usage_tracker.record_headers(dict(response.headers))
+        # Try models in cascade chain
+        for candidate_model in fallback_chain:
+            payload = {
+                "model": candidate_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+                "stream_options": {"include_usage": True}
+            }
 
-            if response.status_code == 404 and self.model != "qwen/qwen3.8-27b":
-                # Automatically fallback to available working model
-                self.model = "qwen/qwen3.8-27b"
-                payload["model"] = self.model
+            try:
                 response = requests.post(GROQ_ENDPOINT, headers=headers, json=payload, stream=True, timeout=60)
                 if response.headers:
                     self.usage_tracker.record_headers(dict(response.headers))
 
-            if response.status_code == 401:
-                err_msg = "❌ Error: Invalid Groq API Key. Please check your key in Settings."
-                on_chunk(err_msg)
-                return err_msg
-            elif response.status_code != 200:
-                err_msg = f"❌ Groq API Error ({response.status_code}): {response.text}"
-                on_chunk(err_msg)
-                return err_msg
-
-            for line in response.iter_lines():
-                if not line:
+                if response.status_code == 429:
+                    print(f"[GroqClient] Model {candidate_model} hit rate limit (429), cascading to next model...")
                     continue
-                line_str = line.decode("utf-8") if isinstance(line, bytes) else line
-                if line_str.startswith("data: "):
-                    data_body = line_str[6:].strip()
-                    if data_body == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_body)
-                        choices = chunk.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                full_content += content
-                                on_chunk(content)
-                        if "usage" in chunk and chunk["usage"]:
-                            u = chunk["usage"]
-                            prompt_tokens_used = u.get("prompt_tokens", 0)
-                            completion_tokens_used = u.get("completion_tokens", 0)
-                            total_tokens_used = u.get("total_tokens", 0)
-                    except Exception:
+                elif response.status_code == 404:
+                    print(f"[GroqClient] Model {candidate_model} not found (404), cascading...")
+                    continue
+                elif response.status_code == 401:
+                    err_msg = "❌ Error: Invalid Groq API Key. Please check your key in Settings."
+                    on_chunk(err_msg)
+                    return err_msg
+                elif response.status_code != 200:
+                    print(f"[GroqClient] Model {candidate_model} returned {response.status_code}: {response.text[:100]}")
+                    continue
+
+                # Successful stream connection!
+                self.last_model_used = candidate_model
+                for line in response.iter_lines():
+                    if not line:
                         continue
+                    line_str = line.decode("utf-8") if isinstance(line, bytes) else line
+                    if line_str.startswith("data: "):
+                        data_body = line_str[6:].strip()
+                        if data_body == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_body)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    full_content += content
+                                    on_chunk(content)
+                            if "usage" in chunk and chunk["usage"]:
+                                u = chunk["usage"]
+                                prompt_tokens_used = u.get("prompt_tokens", 0)
+                                completion_tokens_used = u.get("completion_tokens", 0)
+                                total_tokens_used = u.get("total_tokens", 0)
+                        except Exception:
+                            continue
 
-            if total_tokens_used == 0 and full_content:
-                # Estimate tokens if not provided in stream
-                completion_tokens_used = max(1, len(full_content) // 4)
-                prompt_tokens_used = sum(max(1, len(m.get("content", "")) // 4) for m in messages if isinstance(m.get("content"), str))
-                total_tokens_used = prompt_tokens_used + completion_tokens_used
+                if full_content:
+                    if total_tokens_used == 0:
+                        completion_tokens_used = max(1, len(full_content) // 4)
+                        prompt_tokens_used = sum(max(1, len(m.get("content", "")) // 4) for m in messages if isinstance(m.get("content"), str))
+                        total_tokens_used = prompt_tokens_used + completion_tokens_used
 
-            self.usage_tracker.record_chat_tokens(prompt_tokens_used, completion_tokens_used, total_tokens_used)
-            return full_content
+                    self.usage_tracker.record_chat_tokens(prompt_tokens_used, completion_tokens_used, total_tokens_used)
+                    return full_content
 
-        except requests.exceptions.ConnectionError:
-            err_msg = "❌ Network Error: Could not connect to Groq servers. Please check your internet connection."
-            on_chunk(err_msg)
-            return err_msg
-        except Exception as e:
-            err_msg = f"❌ Error during Groq streaming: {str(e)}"
-            on_chunk(err_msg)
-            return err_msg
+            except requests.exceptions.ConnectionError:
+                continue
+            except Exception as e:
+                print(f"[GroqClient] Error streaming {candidate_model}: {e}")
+                continue
+
+        # If all candidates failed:
+        err_msg = "❌ All AI models temporarily unavailable or rate limited. Please try again shortly."
+        on_chunk(err_msg)
+        return err_msg
 
     def _do_stream(self, messages: list, on_chunk, model: str, max_tokens: int = 2048) -> str | None:
         """Internal: attempts a streaming request with the given model. Returns None on 404."""
