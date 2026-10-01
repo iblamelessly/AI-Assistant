@@ -490,6 +490,9 @@ window.copyMessage = function(button) {
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
 
+  document.addEventListener("click", primeAudio, { once: true });
+  document.addEventListener("keydown", primeAudio, { once: true });
+
   if (window.pywebview) {
     onAppReady();
   } else {
@@ -506,16 +509,19 @@ function onAppReady() {
     settingModelSelect.innerHTML = "";
 
     data.models.forEach((m) => {
+      const modelId = typeof m === "object" ? m.id : m;
+      const modelName = typeof m === "object" ? (m.name || m.id) : m;
+
       const opt1 = document.createElement("option");
-      opt1.value = m;
-      opt1.textContent = m;
-      if (m === data.current_model) opt1.selected = true;
+      opt1.value = modelId;
+      opt1.textContent = modelName;
+      if (modelId === data.current_model) opt1.selected = true;
       modelSelect.appendChild(opt1);
 
       const opt2 = document.createElement("option");
-      opt2.value = m;
-      opt2.textContent = m;
-      if (m === data.current_model) opt2.selected = true;
+      opt2.value = modelId;
+      opt2.textContent = modelName;
+      if (modelId === data.current_model) opt2.selected = true;
       settingModelSelect.appendChild(opt2);
     });
 
@@ -942,12 +948,22 @@ window.onStreamChunk = function(chunk) {
 };
 
 // Stream complete handler with audio speech response
-window.onStreamComplete = function(fullResponse, toolInfo, audioB64) {
+window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed) {
   isStreaming = false;
   document.getElementById("btn-send").disabled = false;
 
   if (currentAssistantBubble) {
     let finalHtml = '<button class="btn-copy-message" onclick="copyMessage(this)" title="Copy message text">📋 Copy</button>';
+    if (modelUsed) {
+      let badgeLabel = modelUsed;
+      if (modelUsed === "openai/gpt-oss-120b") badgeLabel = "⚡ Super AI [GPT-OSS 120B Reasoning]";
+      else if (modelUsed === "qwen/qwen3.8-27b") badgeLabel = "⚡ Super AI [Qwen 3.8 27B Code Specialist]";
+      else if (modelUsed === "openai/gpt-oss-20b") badgeLabel = "⚡ Super AI [GPT-OSS 20B Ultra-Fast]";
+      else if (modelUsed === "allam-2-7b") badgeLabel = "⚡ Super AI [Allam 2 7B Multilingual]";
+      else if (modelUsed === "super-ai") badgeLabel = "⚡ Super AI Dynamic Ensemble";
+      else badgeLabel = `⚡ ${modelUsed}`;
+      finalHtml += `<div class="model-indicator-badge">${escapeHtml(badgeLabel)}</div>`;
+    }
     if (toolInfo) {
       finalHtml += renderToolHtml(toolInfo);
     }
