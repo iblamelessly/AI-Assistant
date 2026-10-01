@@ -4,6 +4,7 @@ import asyncio
 import base64
 import tempfile
 import threading
+from pathlib import Path
 
 class VoiceEngine:
     """Manages Text-to-Speech generation and voice settings for Jarvis."""
@@ -73,132 +74,109 @@ class VoiceEngine:
 
         return cleaned
 
-    def generate_speech_base64(self, text: str) -> str:
+    def synthesize_and_speak(self, text: str, play_audio: bool = True) -> str | None:
         """
-        Generates MP3 audio using edge-tts (English neural voices) and returns a base64 string
-        suitable for immediate HTML5 audio playback in the desktop UI.
-        Falls back to local SAPI5 pyttsx3 in English if edge-tts is unavailable.
+        Single-pass neural speech synthesis:
+        1. Synthesizes high-fidelity British voice audio (edge-tts) ONCE.
+        2. Saves to a local cache file for native Windows MCI speaker playback.
+        3. Spawns background playback directly to default sound device.
+        4. Returns base64 payload for frontend waveform & animation.
         """
-        if not self.enabled:
+        if not self.enabled or not text:
             return None
 
         clean_text = self.clean_text_for_speech(text)
         if not clean_text:
             return None
 
+        audio_bytes = None
+        out_dir = Path(__file__).resolve().parent.parent / "media" / "output" / "voice"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        speech_file = out_dir / "jarvis_speech.mp3"
+
+        # 1. Edge TTS synthesis
         try:
             import edge_tts
-
-            async def _synthesize():
-                communicate = edge_tts.Communicate(clean_text, self.voice)
-                audio_bytes = b""
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        audio_bytes += chunk["data"]
-                return audio_bytes
-
-            # Run in event loop safely
+            communicate = edge_tts.Communicate(clean_text, self.voice)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            audio_data = loop.run_until_complete(_synthesize())
+            loop.run_until_complete(communicate.save(str(speech_file)))
             loop.close()
 
-            if audio_data:
-                return base64.b64encode(audio_data).decode("utf-8")
+            if speech_file.exists() and speech_file.stat().st_size > 0:
+                with open(speech_file, "rb") as f:
+                    audio_bytes = f.read()
         except Exception as e:
             print(f"[VoiceEngine] edge-tts error: {e}")
 
-        # Offline fallback: pyttsx3 (strictly English voice)
-        try:
-            import pyttsx3
-            engine = pyttsx3.init()
-            # Select an English voice
+        # 2. SAPI5 pyttsx3 fallback if edge-tts produced no audio
+        if not audio_bytes:
             try:
-                for v in engine.getProperty("voices"):
-                    v_name = v.name.lower()
-                    if "en" in str(getattr(v, "languages", "")).lower() or "english" in v_name or "david" in v_name or "zira" in v_name:
-                        engine.setProperty("voice", v.id)
-                        break
-            except Exception:
-                pass
+                import pyttsx3
+                engine = pyttsx3.init()
+                try:
+                    for v in engine.getProperty("voices"):
+                        v_name = v.name.lower()
+                        if "en" in str(getattr(v, "languages", "")).lower() or "english" in v_name or "david" in v_name or "zira" in v_name:
+                            engine.setProperty("voice", v.id)
+                            break
+                except Exception:
+                    pass
+                fallback_wav = out_dir / "jarvis_speech.wav"
+                engine.save_to_file(clean_text, str(fallback_wav))
+                engine.runAndWait()
+                if fallback_wav.exists() and fallback_wav.stat().st_size > 0:
+                    with open(fallback_wav, "rb") as f:
+                        audio_bytes = f.read()
+                    speech_file = fallback_wav
+            except Exception as e:
+                print(f"[VoiceEngine] pyttsx3 fallback error: {e}")
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-                temp_wav = tf.name
+        # 3. Direct Windows Speaker Playback
+        if play_audio and speech_file.exists() and speech_file.stat().st_size > 0:
+            def _play_worker(file_path):
+                with self._lock:
+                    try:
+                        import ctypes
+                        mci = ctypes.windll.winmm.mciSendStringW
+                        alias = f"jarvis_voice_{os.getpid()}"
+                        mci(f"stop {alias}", None, 0, None)
+                        mci(f"close {alias}", None, 0, None)
 
-            engine.save_to_file(clean_text, temp_wav)
-            engine.runAndWait()
+                        # Use short path name to avoid spaces or Unicode issues in MCI
+                        buf = ctypes.create_unicode_buffer(512)
+                        ctypes.windll.kernel32.GetShortPathNameW(str(file_path), buf, 512)
+                        safe_path = buf.value or str(file_path)
 
-            if os.path.exists(temp_wav):
-                with open(temp_wav, "rb") as f:
-                    wav_data = f.read()
-                os.remove(temp_wav)
-                return base64.b64encode(wav_data).decode("utf-8")
-        except Exception as e:
-            print(f"[VoiceEngine] pyttsx3 fallback error: {e}")
+                        ftype = "waveaudio" if safe_path.lower().endswith(".wav") else "mpegvideo"
+                        open_cmd = f'open "{safe_path}" type {ftype} alias {alias}'
+                        r1 = mci(open_cmd, None, 0, None)
+                        if r1 == 0:
+                            mci(f"play {alias} wait", None, 0, None)
+                            mci(f"close {alias}", None, 0, None)
+                        else:
+                            # Direct PowerShell SoundPlayer fallback
+                            import subprocess
+                            subprocess.run([
+                                "powershell", "-NoProfile", "-Command",
+                                f"$w = New-Object System.Media.SoundPlayer '{safe_path}'; $w.PlaySync()"
+                            ], capture_output=True, timeout=15)
+                    except Exception as ex:
+                        print(f"[VoiceEngine] Native playback error: {ex}")
 
+            threading.Thread(target=_play_worker, args=(speech_file,), daemon=True).start()
+
+        if audio_bytes:
+            return base64.b64encode(audio_bytes).decode("utf-8")
         return None
 
+    def generate_speech_base64(self, text: str) -> str:
+        """Compatibility wrapper: delegates to single-pass synthesis with playback."""
+        return self.synthesize_and_speak(text, play_audio=True)
+
     def speak_aloud(self, text: str, block: bool = False):
-        """
-        Synthesizes and vocalizes speech directly through the Windows OS audio system
-        using winmm MCI playback (or pyttsx3 fallback) to guarantee audible output on laptop speakers.
-        """
-        if not self.enabled or not text:
-            return
-
-        clean_text = self.clean_text_for_speech(text)
-        if not clean_text:
-            return
-
-        def _worker():
-            with self._lock:
-                try:
-                    import ctypes
-                    mci = ctypes.windll.winmm.mciSendStringW
-                    alias = f"jarvis_voice_{os.getpid()}"
-                    mci(f"close {alias}", None, 0, None)
-
-                    temp_mp3 = tempfile.mktemp(suffix=".mp3")
-                    import edge_tts
-                    communicate = edge_tts.Communicate(clean_text, self.voice)
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(communicate.save(temp_mp3))
-                    loop.close()
-
-                    if os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 0:
-                        mci(f'open "{temp_mp3}" type mpegvideo alias {alias}', None, 0, None)
-                        mci(f"play {alias} wait", None, 0, None)
-                        mci(f"close {alias}", None, 0, None)
-                        try:
-                            os.remove(temp_mp3)
-                        except Exception:
-                            pass
-                        return
-                except Exception as e:
-                    print(f"[VoiceEngine] speak_aloud edge-tts error: {e}")
-
-                # Offline fallback to SAPI5 pyttsx3
-                try:
-                    import pyttsx3
-                    engine = pyttsx3.init()
-                    try:
-                        for v in engine.getProperty("voices"):
-                            v_name = v.name.lower()
-                            if "en" in str(getattr(v, "languages", "")).lower() or "english" in v_name or "david" in v_name or "zira" in v_name:
-                                engine.setProperty("voice", v.id)
-                                break
-                    except Exception:
-                        pass
-                    engine.say(clean_text)
-                    engine.runAndWait()
-                except Exception as e:
-                    print(f"[VoiceEngine] speak_aloud pyttsx3 error: {e}")
-
-        if block:
-            _worker()
-        else:
-            threading.Thread(target=_worker, daemon=True).start()
+        """Compatibility wrapper: delegates to single-pass synthesis with playback."""
+        self.synthesize_and_speak(text, play_audio=True)
 
     def stop(self):
         """Stops any currently playing audio playback."""

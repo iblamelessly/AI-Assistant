@@ -76,9 +76,9 @@ class AssistantApi:
                     js_code = f"window.onStreamChunk({json.dumps(token)});"
                     self._window.evaluate_js(js_code)
 
-            def on_complete(full_resp, tool_info, audio_b64=None):
+            def on_complete(full_resp, tool_info, audio_b64=None, model_used=None):
                 if self._window:
-                    js_code = f"window.onStreamComplete({json.dumps(full_resp)}, {json.dumps(tool_info)}, {json.dumps(audio_b64)});"
+                    js_code = f"window.onStreamComplete({json.dumps(full_resp)}, {json.dumps(tool_info)}, {json.dumps(audio_b64)}, {json.dumps(model_used)});"
                     self._window.evaluate_js(js_code)
 
             def on_tool(tool_info):
@@ -119,9 +119,9 @@ class AssistantApi:
         if voice_name and self.voice_engine:
             self.voice_engine.set_voice(voice_name)
         sample = "Good day, sir. JARVIS speech synthesis is online and speaking in English."
+        b64 = None
         if self.voice_engine:
-            self.voice_engine.speak_aloud(sample)
-        b64 = self.voice_engine.generate_speech_base64(sample) if self.voice_engine else None
+            b64 = self.voice_engine.synthesize_and_speak(sample, play_audio=True)
         return {"success": bool(b64), "audio_b64": b64, "text": sample}
 
     def speak_aloud(self, text: str):
