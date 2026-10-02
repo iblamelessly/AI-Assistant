@@ -63,7 +63,7 @@ class AssistantApi:
             "usage_stats": usage_tracker.get_stats()
         }
 
-    def send_message(self, user_message, session_id, attachments=None):
+    def send_message(self, user_message, session_id, attachments=None, voice_mode=False):
         """Asynchronously streams response tokens to the UI via evaluate_js with dynamic activity states."""
         def run_stream():
             def on_status(status_text, status_type="thinking", detail=""):
@@ -78,7 +78,7 @@ class AssistantApi:
 
             def on_complete(full_resp, tool_info, audio_b64=None, model_used=None):
                 if self._window:
-                    js_code = f"window.onStreamComplete({json.dumps(full_resp)}, {json.dumps(tool_info)}, {json.dumps(audio_b64)}, {json.dumps(model_used)});"
+                    js_code = f"window.onStreamComplete({json.dumps(full_resp)}, {json.dumps(tool_info)}, {json.dumps(audio_b64)}, {json.dumps(model_used)}, {json.dumps(bool(voice_mode))});"
                     self._window.evaluate_js(js_code)
 
             def on_tool(tool_info):
@@ -93,7 +93,8 @@ class AssistantApi:
                 on_complete=on_complete,
                 on_tool=on_tool,
                 attachments=attachments,
-                on_status=on_status
+                on_status=on_status,
+                voice_mode=voice_mode
             )
 
         thread = threading.Thread(target=run_stream, daemon=True)
@@ -266,10 +267,20 @@ class AssistantApi:
             self.engine.permission_guard.require_destructive_confirm = bool(settings["confirm_sensitive_actions"])
         if "confirm_personal_data_access" in settings:
             self.engine.permission_guard.require_privacy_confirm = bool(settings["confirm_personal_data_access"])
+        if "google_api_key" in settings:
+            self.engine.set_google_api_key(settings["google_api_key"])
         if "voice_name" in settings:
             self.set_voice(settings["voice_name"])
 
         return {"status": "success", "config": self.config_mgr.get_all()}
+
+    def test_google_connection(self, api_key=None):
+        """Tests Google Gemini API key connection."""
+        if api_key:
+            from core.gemini_client import GeminiClient
+            client = GeminiClient(api_key=api_key)
+            return client.test_connection()
+        return self.engine.gemini_client.test_connection()
 
     def start_voice_recording(self):
         """Starts hardware microphone recording in background."""

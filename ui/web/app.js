@@ -10,6 +10,42 @@ let recognition = null;
 let isRecording = false;
 
 let pendingAttachments = [];
+let voiceConversationMode = false;
+let continuousListen = true;
+let subtitleFadeTimer = null;
+
+function showOrbSubtitle(text) {
+  const card = document.getElementById("orb-subtitle-card");
+  const textEl = document.getElementById("orb-subtitle-text");
+  if (!card || !textEl) return;
+  clearTimeout(subtitleFadeTimer);
+  textEl.textContent = text;
+  card.classList.remove("hidden");
+}
+
+function hideOrbSubtitle(delayMs = 0) {
+  const card = document.getElementById("orb-subtitle-card");
+  if (!card) return;
+  clearTimeout(subtitleFadeTimer);
+  if (delayMs > 0) {
+    subtitleFadeTimer = setTimeout(() => {
+      card.classList.add("hidden");
+    }, delayMs);
+  } else {
+    card.classList.add("hidden");
+  }
+}
+
+function updateVoiceModeUI() {
+  const btn = document.getElementById("btn-toggle-voice-mode");
+  if (btn) {
+    btn.classList.toggle("active", voiceConversationMode);
+  }
+  document.body.classList.toggle("voice-mode", voiceConversationMode);
+  if (voiceConversationMode) {
+    showVoiceOrb("🎙️ JARVIS Voice Companion Active");
+  }
+}
 
 function formatFileSize(bytes) {
   if (!bytes || bytes === 0) return "0 B";
@@ -540,6 +576,22 @@ function onAppReady() {
       const ollamaUrlInput = document.getElementById("setting-ollama-url");
       if (ollamaUrlInput) ollamaUrlInput.value = cfg.ollama_url || "http://localhost:11434";
 
+      const googleKeyInput = document.getElementById("setting-google-key");
+      if (googleKeyInput) googleKeyInput.value = cfg.google_api_key || "";
+
+      const voiceConvCheck = document.getElementById("setting-voice-conversation-mode");
+      if (voiceConvCheck) {
+        voiceConvCheck.checked = cfg.voice_conversation_mode === true;
+        voiceConversationMode = cfg.voice_conversation_mode === true;
+        updateVoiceModeUI();
+      }
+
+      const continuousCheck = document.getElementById("setting-continuous-listen");
+      if (continuousCheck) {
+        continuousCheck.checked = cfg.continuous_listen !== false;
+        continuousListen = cfg.continuous_listen !== false;
+      }
+
       const confirmActions = document.getElementById("setting-confirm-actions");
       if (confirmActions) confirmActions.checked = cfg.confirm_sensitive_actions !== false;
 
@@ -832,17 +884,27 @@ function speakWithBrowserSynthesis(text, onCompleteCallback) {
   }
 }
 
-function playSpeech(audioB64, fallbackText) {
-  if (!voiceEnabled) return;
+function playSpeech(audioB64, fallbackText, onCompleteCallback) {
+  if (!voiceEnabled) {
+    if (typeof onCompleteCallback === "function") onCompleteCallback();
+    return;
+  }
 
   const voiceBtn = document.getElementById("btn-toggle-voice");
   const orbLabel = document.getElementById("orb-status-text");
   if (voiceBtn) voiceBtn.classList.add("speaking");
   if (orbLabel) orbLabel.textContent = "🎙️ Speaking in English...";
 
-  const resetVoiceUI = () => {
-    if (voiceBtn) voiceBtn.classList.remove("speaking");
-    if (orbLabel) orbLabel.textContent = "Ready for command...";
+  let finished = false;
+  const finishSpeech = () => {
+    if (!finished) {
+      finished = true;
+      if (voiceBtn) voiceBtn.classList.remove("speaking");
+      if (orbLabel) orbLabel.textContent = "Ready for command...";
+      if (typeof onCompleteCallback === "function") {
+        onCompleteCallback();
+      }
+    }
   };
 
   const estSeconds = Math.max(2, Math.min(15, (fallbackText || "").split(" ").length * 0.35));
@@ -857,27 +919,16 @@ function playSpeech(audioB64, fallbackText) {
         }
         audioEl.src = `data:${mime};base64,${audioB64}`;
 
-        let finished = false;
-        const handleEnd = () => {
-          if (!finished) {
-            finished = true;
-            resetVoiceUI();
-          }
-        };
-
-        audioEl.onended = handleEnd;
+        audioEl.onended = finishSpeech;
         audioEl.onerror = () => {
-          if (!finished) {
-            finished = true;
-            setTimeout(resetVoiceUI, estSeconds * 1000);
-          }
+          setTimeout(finishSpeech, estSeconds * 1000);
         };
 
         const playPromise = audioEl.play();
         if (playPromise !== undefined) {
           playPromise.catch(err => {
             console.warn("Audio play() handled or blocked by policy:", err);
-            setTimeout(resetVoiceUI, estSeconds * 1000);
+            setTimeout(finishSpeech, estSeconds * 1000);
           });
         }
         return;
@@ -888,8 +939,8 @@ function playSpeech(audioB64, fallbackText) {
   }
 
   // Fallback to browser Web Speech API or timer
-  speakWithBrowserSynthesis(fallbackText, resetVoiceUI);
-  setTimeout(resetVoiceUI, estSeconds * 1000);
+  speakWithBrowserSynthesis(fallbackText, finishSpeech);
+  setTimeout(finishSpeech, estSeconds * 1000);
 }
 
 // Real-time status update from backend engine (Analyzing / Thinking / Creating / Executing / Speaking)
@@ -937,6 +988,9 @@ window.onToolExecuted = function(toolInfo) {
 // Streaming chunk handler showing real-time task badge + streamed content
 window.onStreamChunk = function(chunk) {
   currentStreamBuffer += chunk;
+  if (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode")) {
+    showOrbSubtitle(currentStreamBuffer);
+  }
   if (currentAssistantBubble) {
     const extracted = extractSuggestions(currentStreamBuffer);
     const pillHtml = `<div class="active-task-pill state-${currentStatusType}"><span class="active-task-dot"></span><span class="active-task-label">${escapeHtml(currentStatusText)}</span></div><br/>`;
@@ -948,9 +1002,15 @@ window.onStreamChunk = function(chunk) {
 };
 
 // Stream complete handler with audio speech response
-window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed) {
+window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, isVoiceMode) {
   isStreaming = false;
   document.getElementById("btn-send").disabled = false;
+
+  const isVoice = Boolean(isVoiceMode || voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
+
+  if (isVoice) {
+    showOrbSubtitle(fullResponse);
+  }
 
   if (currentAssistantBubble) {
     let finalHtml = '<button class="btn-copy-message" onclick="copyMessage(this)" title="Copy message text">📋 Copy</button>';
@@ -960,6 +1020,8 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed) 
       else if (modelUsed === "qwen/qwen3.8-27b") badgeLabel = "⚡ Super AI [Qwen 3.8 27B Code Specialist]";
       else if (modelUsed === "openai/gpt-oss-20b") badgeLabel = "⚡ Super AI [GPT-OSS 20B Ultra-Fast]";
       else if (modelUsed === "allam-2-7b") badgeLabel = "⚡ Super AI [Allam 2 7B Multilingual]";
+      else if (modelUsed === "gemini-2.0-flash") badgeLabel = "⚡ Super AI [Google Gemini 2.0 Flash]";
+      else if (modelUsed === "gemini-1.5-pro") badgeLabel = "⚡ Super AI [Google Gemini 1.5 Pro]";
       else if (modelUsed === "super-ai") badgeLabel = "⚡ Super AI Dynamic Ensemble";
       else badgeLabel = `⚡ ${modelUsed}`;
       finalHtml += `<div class="model-indicator-badge">${escapeHtml(badgeLabel)}</div>`;
@@ -994,8 +1056,19 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed) 
     loadAsyncMediaElements(currentAssistantBubble);
   }
 
-  // Speak back response in English
-  playSpeech(audioB64, fullResponse);
+  // Speak back response in English with hands-free callback
+  playSpeech(audioB64, fullResponse, () => {
+    if (isVoice) {
+      hideOrbSubtitle(2000);
+      if (continuousListen && (voiceConversationMode || document.body.classList.contains("voice-mode"))) {
+        setTimeout(() => {
+          if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode"))) {
+            toggleRecording();
+          }
+        }, 400);
+      }
+    }
+  });
 
   currentAssistantBubble = null;
   currentStreamBuffer = "";
@@ -1074,11 +1147,17 @@ function sendMessage() {
   currentStreamBuffer = "";
   scrollToBottom();
 
+  const isVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
+  if (isVoice) {
+    showVoiceOrb(currentStatusText);
+    showOrbSubtitle("JARVIS is thinking...");
+  }
+
   const orbLabel = document.getElementById("orb-status-text");
   if (orbLabel) orbLabel.textContent = currentStatusText;
 
   // Call Python API
-  window.pywebview.api.send_message(userText, currentSessionId, attachmentsToSend).catch((err) => {
+  window.pywebview.api.send_message(userText, currentSessionId, attachmentsToSend, isVoice).catch((err) => {
     console.error("Send message error:", err);
     bubble.innerHTML = `<p style="color:var(--danger)">Error: ${err}</p>`;
     isStreaming = false;
@@ -1324,6 +1403,18 @@ function setupEventListeners() {
       hideVoiceOrb();
     }
   });
+
+  // Siri / JARVIS Voice Conversation Mode Button
+  const btnToggleVoiceMode = document.getElementById("btn-toggle-voice-mode");
+  if (btnToggleVoiceMode) {
+    btnToggleVoiceMode.addEventListener("click", () => {
+      voiceConversationMode = !voiceConversationMode;
+      updateVoiceModeUI();
+      if (voiceConversationMode && !isNativeRecording && !isStreaming) {
+        toggleRecording();
+      }
+    });
+  }
 
   // Always on Top Pin Button
   const pinBtn = document.getElementById("btn-pin-ontop");
@@ -1632,6 +1723,9 @@ window.replyConfirmation = function(choice) {
     const provider = document.getElementById("setting-provider-select").value;
     const groqKey = document.getElementById("setting-groq-key").value.trim();
     const groqModel = document.getElementById("setting-groq-model").value;
+    const googleKey = document.getElementById("setting-google-key") ? document.getElementById("setting-google-key").value.trim() : "";
+    const voiceConvMode = document.getElementById("setting-voice-conversation-mode") ? document.getElementById("setting-voice-conversation-mode").checked : false;
+    const contListen = document.getElementById("setting-continuous-listen") ? document.getElementById("setting-continuous-listen").checked : true;
     const ollamaUrl = document.getElementById("setting-ollama-url").value.trim();
     const ollamaModel = document.getElementById("setting-model-select").value;
     const personaName = document.getElementById("setting-persona-name").value.trim();
@@ -1644,6 +1738,9 @@ window.replyConfirmation = function(choice) {
       provider: provider,
       groq_api_key: groqKey,
       groq_model: groqModel,
+      google_api_key: googleKey,
+      voice_conversation_mode: voiceConvMode,
+      continuous_listen: contListen,
       ollama_url: ollamaUrl,
       ollama_model: ollamaModel,
       persona_name: personaName,
@@ -1652,10 +1749,48 @@ window.replyConfirmation = function(choice) {
       confirm_personal_data_access: confirmPrivacy
     }).then(() => {
       settingsModal.classList.remove("active");
-      alert("Settings saved! Jarvis will now use " + (provider === 'groq' ? 'Groq Cloud' : 'Local Ollama') + " with English voice (" + voiceName + ").");
+      alert("Settings saved! JARVIS configuration updated.");
       window.location.reload();
     });
   });
+
+  // Test Google Gemini Connection
+  const btnTestGoogle = document.getElementById("btn-test-google");
+  if (btnTestGoogle) {
+    btnTestGoogle.addEventListener("click", () => {
+      const keyInput = document.getElementById("setting-google-key");
+      const badge = document.getElementById("google-status-badge");
+      const key = keyInput ? keyInput.value.trim() : "";
+      btnTestGoogle.textContent = "⚡ Testing...";
+      btnTestGoogle.disabled = true;
+
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.test_google_connection) {
+        window.pywebview.api.test_google_connection(key).then(res => {
+          btnTestGoogle.textContent = "⚡ Test Key";
+          btnTestGoogle.disabled = false;
+          if (badge) {
+            if (res && res.success) {
+              badge.textContent = "✓ Connected (" + (res.models ? res.models.length : 3) + " models)";
+              badge.style.color = "var(--success)";
+            } else {
+              badge.textContent = "✕ Failed: " + (res && res.error ? res.error : "Invalid API key");
+              badge.style.color = "var(--danger)";
+            }
+          }
+        }).catch(err => {
+          btnTestGoogle.textContent = "⚡ Test Key";
+          btnTestGoogle.disabled = false;
+          if (badge) {
+            badge.textContent = "✕ Test error: " + err;
+            badge.style.color = "var(--danger)";
+          }
+        });
+      } else {
+        btnTestGoogle.textContent = "⚡ Test Key";
+        btnTestGoogle.disabled = false;
+      }
+    });
+  }
 
   // Test English Neural Voice Output
   const btnTestVoice = document.getElementById("btn-test-voice");
