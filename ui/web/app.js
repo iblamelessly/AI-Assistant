@@ -1020,8 +1020,10 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
       else if (modelUsed === "qwen/qwen3.8-27b") badgeLabel = "⚡ Super AI [Qwen 3.8 27B Code Specialist]";
       else if (modelUsed === "openai/gpt-oss-20b") badgeLabel = "⚡ Super AI [GPT-OSS 20B Ultra-Fast]";
       else if (modelUsed === "allam-2-7b") badgeLabel = "⚡ Super AI [Allam 2 7B Multilingual]";
-      else if (modelUsed === "gemini-2.0-flash") badgeLabel = "⚡ Super AI [Google Gemini 2.0 Flash]";
-      else if (modelUsed === "gemini-1.5-pro") badgeLabel = "⚡ Super AI [Google Gemini 1.5 Pro]";
+      else if (modelUsed === "gemini-3.8-flash") badgeLabel = "⚡ Super AI [Google Gemini 3.8 Flash]";
+      else if (modelUsed === "gemini-3.5-flash") badgeLabel = "⚡ Super AI [Google Gemini 3.5 Flash]";
+      else if (modelUsed === "gemini-3.5-flash-lite") badgeLabel = "⚡ Super AI [Google Gemini 3.5 Flash-Lite]";
+      else if (modelUsed === "gemini-3.6-flash") badgeLabel = "⚡ Super AI [Google Gemini 3.6 Flash]";
       else if (modelUsed === "super-ai") badgeLabel = "⚡ Super AI Dynamic Ensemble";
       else badgeLabel = `⚡ ${modelUsed}`;
       finalHtml += `<div class="model-indicator-badge">${escapeHtml(badgeLabel)}</div>`;

@@ -34,17 +34,17 @@ class SuperAIRouter:
             "role": "Multilingual Specialist",
             "description": "Specialized Arabic & cultural knowledge model."
         },
-        "gemini-2.0-flash": {
-            "id": "gemini-2.0-flash",
-            "name": "Google Gemini 2.0 Flash",
-            "role": "Next-Gen Multimodal & Reasoning",
-            "description": "Google's ultra-fast flagship multimodal intelligence and reasoning model."
+        "gemini-3.8-flash": {
+            "id": "gemini-3.8-flash",
+            "name": "Google Gemini 3.8 Flash",
+            "role": "Flagship Intelligence & Autonomous Agents",
+            "description": "Google's most powerful Flash model for complex enterprise workflows, coding, and agentic tasks."
         },
-        "gemini-1.5-pro": {
-            "id": "gemini-1.5-pro",
-            "name": "Google Gemini 1.5 Pro",
-            "role": "Massive 2M Context Analysis",
-            "description": "Google's frontier model with 2-million-token context for deep document and complex reasoning."
+        "gemini-3.5-flash": {
+            "id": "gemini-3.5-flash",
+            "name": "Google Gemini 3.5 Flash",
+            "role": "High-Performance Coding & Reasoning",
+            "description": "Fast, high-performance model for coding, agentic tasks, and multimodal reasoning."
         }
     }
 
@@ -85,16 +85,20 @@ class SuperAIRouter:
         lower = text.lower()
         word_count = len(text.split())
 
-        # If media attachments present and Google is configured -> route to Gemini 2.0 Flash
+        # If media attachments present and Google is configured -> route to Gemini 3.8 Flash
         if attachments and len(attachments) > 0 and google_configured:
-            return cls.MODELS["gemini-2.0-flash"]["id"], "Multimodal analysis (Google Gemini)"
+            return cls.MODELS["gemini-3.8-flash"]["id"], "Multimodal analysis (Google Gemini 3.8 Flash)"
 
         # Check for explicit code markers (fenced code blocks, indentation, file extensions)
         if "```" in text or "`" in text or "{" in text and "}" in text or "<html" in lower or "<script" in lower:
+            if google_configured:
+                return cls.MODELS["gemini-3.5-flash"]["id"], "Code specialist (Gemini 3.5 Flash)"
             return cls.MODELS["qwen-coder"]["id"], "Code syntax detected"
 
         # Check for coding keywords
         if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.CODE_KEYWORDS):
+            if google_configured:
+                return cls.MODELS["gemini-3.5-flash"]["id"], "Software engineering (Gemini 3.5 Flash)"
             return cls.MODELS["qwen-coder"]["id"], "Software engineering query"
 
         # Check for short chit-chat / quick questions (< 10 words and conversational match)
@@ -103,19 +107,19 @@ class SuperAIRouter:
 
         # Check for deep reasoning / analysis
         if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS):
-            if google_configured and word_count > 25:
-                return cls.MODELS["gemini-2.0-flash"]["id"], "Google Gemini deep reasoning"
+            if google_configured:
+                return cls.MODELS["gemini-3.8-flash"]["id"], "Deep reasoning (Gemini 3.8 Flash)"
             return cls.MODELS["gpt-oss-120b"]["id"], "Deep reasoning & analysis"
 
         # If length is long (> 35 words) or multi-paragraph -> 120B / Gemini model for deep synthesis
         if word_count > 35 or "\n\n" in text:
             if google_configured:
-                return cls.MODELS["gemini-2.0-flash"]["id"], "Complex multi-step synthesis (Gemini 2.0 Flash)"
+                return cls.MODELS["gemini-3.8-flash"]["id"], "Complex synthesis (Gemini 3.8 Flash)"
             return cls.MODELS["gpt-oss-120b"]["id"], "Complex multi-step instruction"
 
         # Medium length general questions default to 120B or Gemini for superior intellectual responses
         if google_configured:
-            return cls.MODELS["gemini-2.0-flash"]["id"], "Intellectual reasoning engine (Gemini 2.0 Flash)"
+            return cls.MODELS["gemini-3.8-flash"]["id"], "Intellectual reasoning (Gemini 3.8 Flash)"
         return cls.MODELS["gpt-oss-120b"]["id"], "Intellectual reasoning engine"
 
     @classmethod
@@ -129,8 +133,8 @@ class SuperAIRouter:
             cls.MODELS["gpt-oss-20b"]["id"]
         ]
         if google_configured:
-            all_ids.insert(1, cls.MODELS["gemini-2.0-flash"]["id"])
-            all_ids.append(cls.MODELS["gemini-1.5-pro"]["id"])
+            all_ids.insert(1, cls.MODELS["gemini-3.8-flash"]["id"])
+            all_ids.append(cls.MODELS["gemini-3.5-flash"]["id"])
         all_ids.append(cls.MODELS["allam"]["id"])
 
         chain = [primary_model_id]

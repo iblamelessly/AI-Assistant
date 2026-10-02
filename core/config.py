@@ -7,7 +7,7 @@ DEFAULT_CONFIG = {
     "groq_api_key": "",
     "groq_model": "super-ai",
     "google_api_key": "",
-    "google_model": "gemini-2.0-flash",
+    "google_model": "gemini-3.8-flash",
     "ollama_model": "qwen3:1.7b",
     "ollama_url": "http://localhost:11434",
     "voice_enabled": True,

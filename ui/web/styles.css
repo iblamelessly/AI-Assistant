@@ -1935,13 +1935,19 @@ textarea, input {
   justify-content: center;
   cursor: pointer;
   user-select: none;
-  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+  contain: layout style paint;
 }
 
 .jarvis-voice-orb.hidden {
   opacity: 0;
   pointer-events: none;
   transform: scale(0.4) translateY(20px);
+}
+
+.jarvis-voice-orb.hidden .orb-ring {
+  animation: none;
 }
 
 .jarvis-voice-orb.visible {
@@ -1958,11 +1964,13 @@ textarea, input {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 24px rgba(0, 210, 255, 0.7), inset 0 0 14px rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 18px rgba(0, 210, 255, 0.5), inset 0 0 10px rgba(255, 255, 255, 0.5);
   position: relative;
   z-index: 4;
   border: 1.5px solid rgba(255, 255, 255, 0.75);
-  transition: all 0.3s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  will-change: transform;
+  contain: layout style;
 }
 
 .orb-core:hover {

@@ -41,7 +41,7 @@ class AssistantEngine:
 
         self.gemini_client = GeminiClient(
             api_key=self.config_mgr.get("google_api_key", ""),
-            model=self.config_mgr.get("google_model", "gemini-2.0-flash")
+            model=self.config_mgr.get("google_model", "gemini-3.8-flash")
         )
 
         self.provider = self.config_mgr.get("provider", "groq")
