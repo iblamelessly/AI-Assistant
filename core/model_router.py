@@ -33,6 +33,18 @@ class SuperAIRouter:
             "name": "Allam 2 7B",
             "role": "Multilingual Specialist",
             "description": "Specialized Arabic & cultural knowledge model."
+        },
+        "gemini-2.0-flash": {
+            "id": "gemini-2.0-flash",
+            "name": "Google Gemini 2.0 Flash",
+            "role": "Next-Gen Multimodal & Reasoning",
+            "description": "Google's ultra-fast flagship multimodal intelligence and reasoning model."
+        },
+        "gemini-1.5-pro": {
+            "id": "gemini-1.5-pro",
+            "name": "Google Gemini 1.5 Pro",
+            "role": "Massive 2M Context Analysis",
+            "description": "Google's frontier model with 2-million-token context for deep document and complex reasoning."
         }
     }
 
@@ -61,16 +73,21 @@ class SuperAIRouter:
     ]
 
     @classmethod
-    def classify_prompt(cls, prompt: str, attachments: list = None) -> Tuple[str, str]:
+    def classify_prompt(cls, prompt: str, attachments: list = None, google_configured: bool = False) -> Tuple[str, str]:
         """
         Classifies prompt intent and returns (model_id, reason).
+        Combines Groq and Google Gemini models dynamically.
         """
-        if not prompt:
+        if not prompt and not attachments:
             return cls.MODELS["gpt-oss-20b"]["id"], "Default conversational"
 
-        text = prompt.strip()
+        text = (prompt or "").strip()
         lower = text.lower()
         word_count = len(text.split())
+
+        # If media attachments present and Google is configured -> route to Gemini 2.0 Flash
+        if attachments and len(attachments) > 0 and google_configured:
+            return cls.MODELS["gemini-2.0-flash"]["id"], "Multimodal analysis (Google Gemini)"
 
         # Check for explicit code markers (fenced code blocks, indentation, file extensions)
         if "```" in text or "`" in text or "{" in text and "}" in text or "<html" in lower or "<script" in lower:
@@ -86,26 +103,35 @@ class SuperAIRouter:
 
         # Check for deep reasoning / analysis
         if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS):
+            if google_configured and word_count > 25:
+                return cls.MODELS["gemini-2.0-flash"]["id"], "Google Gemini deep reasoning"
             return cls.MODELS["gpt-oss-120b"]["id"], "Deep reasoning & analysis"
 
-        # If length is long (> 35 words) or multi-paragraph -> 120B model for deep synthesis
+        # If length is long (> 35 words) or multi-paragraph -> 120B / Gemini model for deep synthesis
         if word_count > 35 or "\n\n" in text:
+            if google_configured:
+                return cls.MODELS["gemini-2.0-flash"]["id"], "Complex multi-step synthesis (Gemini 2.0 Flash)"
             return cls.MODELS["gpt-oss-120b"]["id"], "Complex multi-step instruction"
 
-        # Medium length general questions default to 120B for superior intellectual responses
+        # Medium length general questions default to 120B or Gemini for superior intellectual responses
+        if google_configured:
+            return cls.MODELS["gemini-2.0-flash"]["id"], "Intellectual reasoning engine (Gemini 2.0 Flash)"
         return cls.MODELS["gpt-oss-120b"]["id"], "Intellectual reasoning engine"
 
     @classmethod
-    def get_fallback_chain(cls, primary_model_id: str) -> List[str]:
+    def get_fallback_chain(cls, primary_model_id: str, google_configured: bool = False) -> List[str]:
         """
         Returns an ordered cascade list of models to try if the primary encounters rate limits (429) or errors.
         """
         all_ids = [
             cls.MODELS["gpt-oss-120b"]["id"],
             cls.MODELS["qwen-coder"]["id"],
-            cls.MODELS["gpt-oss-20b"]["id"],
-            cls.MODELS["allam"]["id"]
+            cls.MODELS["gpt-oss-20b"]["id"]
         ]
+        if google_configured:
+            all_ids.insert(1, cls.MODELS["gemini-2.0-flash"]["id"])
+            all_ids.append(cls.MODELS["gemini-1.5-pro"]["id"])
+        all_ids.append(cls.MODELS["allam"]["id"])
 
         chain = [primary_model_id]
         for m in all_ids:

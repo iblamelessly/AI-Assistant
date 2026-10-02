@@ -7,6 +7,7 @@ from .tools import AssistantTools
 from .voice import VoiceEngine
 from .config import ConfigManager
 from .groq_client import GroqClient, AVAILABLE_GROQ_MODELS, DEFAULT_GROQ_MODEL
+from .gemini_client import GeminiClient, AVAILABLE_GEMINI_MODELS
 from .permissions import PermissionGuard
 from .app_launcher import app_launcher
 from .file_search import file_search_engine
@@ -15,8 +16,8 @@ from .model_router import SuperAIRouter
 class AssistantEngine:
     """
     Unified Autonomous Agent Engine supporting:
-    - Super AI dynamic multi-model ensemble (GPT-OSS 120B, Qwen 3.8 27B, GPT-OSS 20B)
-    - Ultra-fast Groq Cloud & Local Ollama
+    - Super AI dynamic multi-model ensemble (GPT-OSS 120B, Gemini 2.0 Flash, Qwen 3.8 27B, GPT-OSS 20B)
+    - Ultra-fast Groq Cloud & Google Gemini Cloud
     - Human-like Permission & Ambiguity Guard
     - Full Laptop & Terminal Control
     - Neural Voice Synthesis
@@ -37,6 +38,11 @@ class AssistantEngine:
             model=self.config_mgr.get("groq_model", DEFAULT_GROQ_MODEL)
         )
         AssistantTools.set_groq_client(self.groq_client)
+
+        self.gemini_client = GeminiClient(
+            api_key=self.config_mgr.get("google_api_key", ""),
+            model=self.config_mgr.get("google_model", "gemini-2.0-flash")
+        )
 
         self.provider = self.config_mgr.get("provider", "groq")
         self.ollama_model = self.config_mgr.get("ollama_model", "qwen3:1.7b")
@@ -60,10 +66,19 @@ class AssistantEngine:
         self.config_mgr.set("groq_api_key", api_key)
         AssistantTools.set_groq_client(self.groq_client)
 
+    def set_google_api_key(self, api_key: str):
+        self.gemini_client.set_api_key(api_key)
+        self.config_mgr.set("google_api_key", api_key)
+
     def get_installed_models(self):
-        """Fetch available models based on active provider."""
+        """Fetch available models based on active provider, combining Groq and Google Gemini."""
         if self.provider == "groq":
-            return self.groq_client.get_dynamic_models()
+            models = list(self.groq_client.get_dynamic_models())
+            if self.gemini_client.is_configured():
+                for gm in AVAILABLE_GEMINI_MODELS:
+                    if not any(m["id"] == gm["id"] for m in models):
+                        models.append(gm)
+            return models
         else:
             try:
                 r = requests.get(f"{self.ollama_url}/api/tags", timeout=3)
@@ -75,20 +90,23 @@ class AssistantEngine:
             return [{"id": self.ollama_model, "name": self.ollama_model}]
 
     def set_model(self, model_name: str):
-        if self.provider == "groq":
+        if model_name.startswith("gemini"):
+            self.gemini_client.set_model(model_name)
+            self.config_mgr.set("google_model", model_name)
+        elif self.provider == "groq":
             self.groq_client.set_model(model_name)
             self.config_mgr.set("groq_model", model_name)
         else:
             self.ollama_model = model_name
             self.config_mgr.set("ollama_model", model_name)
 
-    def build_system_prompt(self):
+    def build_system_prompt(self, voice_mode: bool = False):
         """Build dynamic system prompt giving Jarvis human-like common sense and autonomous control."""
         memory_json = self.memory_mgr.get_formatted_summary()
         current_time_info = AssistantTools.get_date_time()["summary"]
         current_dir = os.getcwd()
 
-        return (
+        prompt = (
             "You are JARVIS (Just A Rather Very Intelligent System), the iconic, highly sophisticated autonomous AI assistant created for your user (inspired by Tony Stark's JARVIS in Iron Man, voiced by Paul Bettany).\n"
             "You have full access to the user's laptop, terminal, files, media, applications, hardware microphone, and development environment.\n\n"
             "JARVIS CORE PERSONA & AUDIO SYSTEM:\n"
@@ -142,6 +160,16 @@ class AssistantEngine:
             "- Terminate app: [ACTION: kill_process(\"process_name\")]\n"
             "- Web search: [ACTION: web_search(\"query\")]\n"
         )
+        if voice_mode:
+            prompt += (
+                "\n\nVOICE CONVERSATION MODE ACTIVE (SIRI / REAL JARVIS SPOKEN COMPANION):\n"
+                "- The user is talking directly to you via voice in real-time hands-free conversation.\n"
+                "- Reply verbally in 1 to 3 punchy, crisp, natural conversational sentences.\n"
+                "- Be articulate, charming, and sharp as Tony Stark's JARVIS.\n"
+                "- DO NOT output markdown headers, bullet lists, markdown asterisks, or code blocks — this is spoken auditory conversation.\n"
+                "- If executing an action or creating something, state the confirmation warmly and concisely in one spoken sentence (e.g. 'Opening YouTube for you now, sir.' or 'I have prepared the presentation on your screen, sir.').\n"
+            )
+        return prompt
 
     def _detect_media_intent(self, msg: str, raw_msg: str):
         """Detects image or video editing requests on the fast path."""
@@ -641,7 +669,7 @@ class AssistantEngine:
 
         return None
 
-    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None, on_status=None):
+    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None, on_status=None, voice_mode: bool = False):
         """
         Processes a chat turn with:
         1. Human confirmation check (Yes/No response evaluation)
@@ -938,7 +966,7 @@ class AssistantEngine:
         # 6. Build conversation history
         session = self.history_mgr.get_session(session_id)
         conversation_messages = [
-            {"role": "system", "content": self.build_system_prompt()}
+            {"role": "system", "content": self.build_system_prompt(voice_mode=voice_mode)}
         ]
 
         if session and "messages" in session:
@@ -956,15 +984,23 @@ class AssistantEngine:
 
         conversation_messages.append({"role": "user", "content": user_prompt_content})
 
-        # 6. Stream from active provider (Groq or Ollama)
+        # 6. Stream from active provider (Google Gemini, Groq, or Ollama)
         full_response = ""
-        if self.provider == "groq" and self.groq_client.is_configured():
+        is_google_configured = self.gemini_client.is_configured()
+
+        # If user explicitly selected a Gemini model
+        if self.model.startswith("gemini-") and is_google_configured:
+            friendly_name = SuperAIRouter.get_friendly_name(self.model)
+            set_status("Thinking...", "thinking", f"Reasoning with {friendly_name}...")
+            full_response = self.gemini_client.stream_chat(conversation_messages, on_chunk, model_override=self.model)
+            self.groq_client.last_model_used = self.model
+        elif self.provider == "groq" and self.groq_client.is_configured():
             # Detect image attachments — route to vision model if any images present
             image_paths = [
                 a["path"] for a in (attachments or [])
                 if a.get("type") == "image" and os.path.exists(a.get("path", ""))
             ]
-            if image_paths:
+            if image_paths and not is_google_configured:
                 # Vision Q&A — send actual image bytes to Groq's vision model
                 set_status("Analyzing...", "analyzing", "Inspecting attached media with Vision AI...")
                 full_response = self.groq_client.stream_vision_chat(
@@ -974,12 +1010,19 @@ class AssistantEngine:
                 )
             else:
                 if self.model == "super-ai":
-                    target_model, reason = SuperAIRouter.classify_prompt(user_message, attachments=attachments)
+                    target_model, reason = SuperAIRouter.classify_prompt(
+                        user_message, attachments=attachments, google_configured=is_google_configured
+                    )
                     friendly_name = SuperAIRouter.get_friendly_name(target_model)
                     set_status("Thinking...", "thinking", f"⚡ Super AI routing to {friendly_name}...")
+                    if target_model.startswith("gemini-") and is_google_configured:
+                        full_response = self.gemini_client.stream_chat(conversation_messages, on_chunk, model_override=target_model)
+                        self.groq_client.last_model_used = target_model
+                    else:
+                        full_response = self.groq_client.stream_chat(conversation_messages, on_chunk, model_override=target_model)
                 else:
                     set_status("Thinking...", "thinking", f"Reasoning with {self.model}...")
-                full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
+                    full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
         else:
             # Fallback to local Ollama
             set_status("Thinking...", "thinking", f"Reasoning with local Ollama ({self.ollama_model})...")

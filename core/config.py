@@ -6,9 +6,13 @@ DEFAULT_CONFIG = {
     "provider": "groq",  # "groq" or "ollama"
     "groq_api_key": "",
     "groq_model": "super-ai",
+    "google_api_key": "",
+    "google_model": "gemini-2.0-flash",
     "ollama_model": "qwen3:1.7b",
     "ollama_url": "http://localhost:11434",
     "voice_enabled": True,
+    "voice_conversation_mode": False,
+    "continuous_listen": True,
     "confirm_sensitive_actions": True,
     "confirm_personal_data_access": True
 }
@@ -42,6 +46,11 @@ class ConfigManager:
             env_key = os.environ.get("GROQ_API_KEY", "").strip()
             if env_key and not data.get("groq_api_key"):
                 data["groq_api_key"] = env_key
+
+            # Check environment variable fallback for Google API key
+            env_google = (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY", "")).strip()
+            if env_google and not data.get("google_api_key"):
+                data["google_api_key"] = env_google
 
             return data
 
