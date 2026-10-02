@@ -88,6 +88,14 @@
         </div>
 
         <div class="header-actions">
+          <button class="icon-btn" id="btn-toggle-voice-mode" title="Toggle Siri / JARVIS Voice Mode (Converse hands-free without text walls)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
           <button class="icon-btn active" id="btn-toggle-voice" title="Jarvis Voice: ON">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
@@ -353,6 +361,29 @@
           </div>
         </div>
 
+        <!-- GOOGLE GEMINI SETTINGS -->
+        <div class="memory-card" style="margin-top: 6px;">
+          <h4 style="font-size:12px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
+            <span>⚡ Google Gemini AI (Optional)</span>
+            <span id="google-status-badge" style="font-size:11px; color:#38bdf8; font-weight:600;">READY</span>
+          </h4>
+          <div class="form-group" style="margin-top:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Google Gemini API Key</label>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent-primary); font-size:11px; text-decoration:none;">Get free Google key &rarr;</a>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <input type="password" id="setting-google-key" placeholder="AIzaSy..." style="flex:1;" />
+              <button type="button" class="btn-save-profile" id="btn-test-google" title="Test Google Gemini Connection" style="white-space:nowrap; padding:6px 14px; font-size:12px; background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.4); cursor:pointer;">
+                ⚡ Test Key
+              </button>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+              Integrates Google Gemini 2.0 Flash & 1.5 Pro into the Super AI multi-model ensemble.
+            </div>
+          </div>
+        </div>
+
         <!-- OLLAMA SETTINGS -->
         <div id="section-ollama-settings" style="display:none;">
           <div class="form-group">
@@ -396,6 +427,16 @@
           </div>
           <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">
             Jarvis vocalizes responses in fluent English with Microsoft Neural TTS and automatic browser audio fallback.
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--text-muted); margin-top:8px; border-top:1px solid var(--border-subtle); padding-top:8px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="setting-voice-conversation-mode" />
+              <span>🎙️ Siri / Real JARVIS Voice Mode (Converse via voice without text walls)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="setting-continuous-listen" checked />
+              <span>Auto-listen for next command after speaking (Hands-free continuous conversation)</span>
+            </label>
           </div>
         </div>
 
@@ -552,6 +593,12 @@
       <div class="orb-pulse-dot"></div>
     </div>
     <div class="orb-label" id="orb-status-text">Ready for command...</div>
+    <div class="orb-subtitle-card hidden" id="orb-subtitle-card">
+      <div class="orb-subtitle-header">
+        <span class="orb-subtitle-badge">⚡ JARVIS</span>
+      </div>
+      <div class="orb-subtitle-text" id="orb-subtitle-text"></div>
+    </div>
     <button class="orb-control-btn orb-mini-btn" id="orb-mini-btn" title="Toggle Compact Mode">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="4 14 10 14 10 20"></polyline>

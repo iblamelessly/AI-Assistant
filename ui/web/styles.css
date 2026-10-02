@@ -2180,3 +2180,85 @@ body.mini-mode .orb-mini-btn svg {
   user-select: none;
 }
 
+/* Voice Mode Header Toggle */
+#btn-toggle-voice-mode.active {
+  color: #38bdf8 !important;
+  border-color: rgba(56, 189, 248, 0.5) !important;
+  background: rgba(56, 189, 248, 0.15) !important;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35) !important;
+}
+
+/* Siri / JARVIS Floating Subtitle Card */
+.orb-subtitle-card {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 320px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65), 0 0 20px rgba(56, 189, 248, 0.18);
+  z-index: 1000;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.orb-subtitle-card.hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px) scale(0.96);
+  pointer-events: none;
+}
+
+.orb-subtitle-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.orb-subtitle-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.orb-subtitle-text {
+  font-size: 13px;
+  color: #f1f5f9;
+  line-height: 1.45;
+  font-weight: 450;
+  display: block;
+  word-break: break-word;
+}
+
+/* Voice Conversation Mode (Hands-Free Siri / JARVIS Companion) */
+body.voice-mode .messages-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+body.voice-mode .message-row {
+  display: none !important;
+}
+
+body.voice-mode .welcome-card {
+  display: none !important;
+}
+
+body.voice-mode .jarvis-voice-orb {
+  display: flex !important;
+  opacity: 1 !important;
+  pointer-events: all !important;
+}
+
