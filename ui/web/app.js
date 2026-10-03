@@ -1282,6 +1282,32 @@ function setOrbListening(active) {
 // Hardware Microphone & Voice Input Controller (Groq Whisper Bridge)
 let isNativeRecording = false;
 let recordingAutoStopTimer = null;
+let transcriptionSafetyTimer = null;
+
+// Asynchronous callback pushed from Python background worker thread
+window.onVoiceTranscribed = function(transcribedText) {
+  clearTimeout(transcriptionSafetyTimer);
+  const chatInput = document.getElementById("chat-input");
+  const defaultPlaceholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
+  if (chatInput) {
+    chatInput.placeholder = defaultPlaceholder;
+  }
+
+  const cleanText = (transcribedText || "").trim();
+  if (cleanText) {
+    if (chatInput) {
+      chatInput.value = cleanText;
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
+    }
+    const label = document.getElementById("orb-status-text");
+    if (label) label.textContent = "Processing command...";
+    sendMessage();
+  } else {
+    const label = document.getElementById("orb-status-text");
+    if (label) label.textContent = "Didn't catch that. Tap mic to speak.";
+  }
+};
 
 function toggleRecording() {
   const micBtn = document.getElementById("btn-mic");
@@ -1292,17 +1318,21 @@ function toggleRecording() {
     isNativeRecording = true;
     if (micBtn) micBtn.classList.add("listening");
     setOrbListening(true);
-    chatInput.placeholder = "🎙️ Listening... Speak now (Click mic or press Enter to send)";
+    if (chatInput) {
+      chatInput.placeholder = "🎙️ Listening... Speak now (Click mic or press Enter to send)";
+    }
 
-    window.pywebview.api.start_voice_recording().then((res) => {
-      if (res && res.status === "error") {
-        console.warn("Could not start recording:", res.message);
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.start_voice_recording) {
+      window.pywebview.api.start_voice_recording().then((res) => {
+        if (res && res.status === "error") {
+          console.warn("Could not start recording:", res.message);
+          stopRecordingUI();
+        }
+      }).catch(err => {
+        console.warn("Voice recording start error:", err);
         stopRecordingUI();
-      }
-    }).catch(err => {
-      console.warn("Voice recording start error:", err);
-      stopRecordingUI();
-    });
+      });
+    }
 
     // Auto-stop after 8 seconds if user forgets to click stop
     clearTimeout(recordingAutoStopTimer);
@@ -1313,26 +1343,42 @@ function toggleRecording() {
     }, 8000);
 
   } else {
-    // Stop Recording & Transcribe with Groq Whisper
+    // Stop Recording & Transcribe asynchronously on background thread
     clearTimeout(recordingAutoStopTimer);
     stopRecordingUI();
     setOrbListening(false);
-    chatInput.placeholder = "⚡ Transcribing your voice with Groq Whisper...";
+    if (chatInput) {
+      chatInput.placeholder = "⚡ Transcribing your voice with Groq Whisper...";
+    }
 
-    window.pywebview.api.stop_voice_recording().then((res) => {
-      chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
-      if (res && res.text) {
-        chatInput.value = res.text;
-        chatInput.style.height = "auto";
-        chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
+    // Failsafe timer: restore placeholder if network drops or takes > 7s
+    clearTimeout(transcriptionSafetyTimer);
+    transcriptionSafetyTimer = setTimeout(() => {
+      if (chatInput && chatInput.placeholder.includes("Transcribing")) {
+        chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
         const label = document.getElementById("orb-status-text");
-        if (label) label.textContent = "Processing command...";
-        sendMessage();
+        if (label) label.textContent = "Ready for command...";
       }
-    }).catch(err => {
-      console.error("Transcription error:", err);
-      chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
-    });
+    }, 7000);
+
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.stop_voice_recording) {
+      window.pywebview.api.stop_voice_recording().then((res) => {
+        if (res && (res.status === "empty" || res.status === "error")) {
+          clearTimeout(transcriptionSafetyTimer);
+          if (chatInput) {
+            chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
+          }
+          const label = document.getElementById("orb-status-text");
+          if (label) label.textContent = "Ready for command...";
+        }
+      }).catch(err => {
+        console.error("Stop recording API error:", err);
+        clearTimeout(transcriptionSafetyTimer);
+        if (chatInput) {
+          chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
+        }
+      });
+    }
   }
 }
 
@@ -1451,12 +1497,28 @@ function setupEventListeners() {
     btnToggleVoiceMode.addEventListener("click", () => {
       voiceConversationMode = !voiceConversationMode;
       updateVoiceModeUI();
-      if (voiceConversationMode && !isNativeRecording && !isStreaming) {
-        setTimeout(() => {
-          if (voiceConversationMode && !isNativeRecording && !isStreaming) {
-            toggleRecording();
+      if (voiceConversationMode) {
+        if (!isNativeRecording && !isStreaming) {
+          setTimeout(() => {
+            if (voiceConversationMode && !isNativeRecording && !isStreaming) {
+              toggleRecording();
+            }
+          }, 50);
+        }
+      } else {
+        if (isNativeRecording) {
+          clearTimeout(recordingAutoStopTimer);
+          clearTimeout(transcriptionSafetyTimer);
+          stopRecordingUI();
+          const chatInput = document.getElementById("chat-input");
+          if (chatInput) {
+            chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
           }
-        }, 50);
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.stop_voice_recording) {
+            window.pywebview.api.stop_voice_recording().catch(() => {});
+          }
+        }
+        hideVoiceOrb();
       }
     });
   }

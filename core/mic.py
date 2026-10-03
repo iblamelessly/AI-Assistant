@@ -204,7 +204,7 @@ class MicrophoneEngine:
                     headers=headers,
                     files=files,
                     data=data,
-                    timeout=15
+                    timeout=6
                 )
                 if resp.status_code == 200:
                     raw_text = resp.text.strip() if isinstance(resp.text, str) else resp.json().get("text", "").strip()
@@ -216,10 +216,11 @@ class MicrophoneEngine:
             except Exception as e:
                 print(f"[MicrophoneEngine] Groq transcription error: {e}")
 
-        # Secondary Fallback: speech_recognition Google Speech API
+        # Secondary Fallback: speech_recognition Google Speech API (max 5s timeout)
         try:
             import speech_recognition as sr
             r = sr.Recognizer()
+            r.operation_timeout = 5
             with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
                 audio = r.record(source)
             text = r.recognize_google(audio)

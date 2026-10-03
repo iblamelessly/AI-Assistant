@@ -283,20 +283,59 @@ class AssistantApi:
         return self.engine.gemini_client.test_connection()
 
     def start_voice_recording(self):
-        """Starts hardware microphone recording in background."""
+        """Starts hardware microphone recording in background without blocking the UI."""
         if self.mic_engine:
-            ok = self.mic_engine.start_recording()
-            return {"status": "recording" if ok else "error"}
+            try:
+                ok = self.mic_engine.start_recording()
+                return {"status": "recording" if ok else "error"}
+            except Exception as e:
+                print(f"[AssistantApi] start_voice_recording error: {e}")
+                return {"status": "error", "message": str(e)}
         return {"status": "error", "message": "Microphone engine not available"}
 
     def stop_voice_recording(self):
-        """Stops microphone recording and transcribes via Groq Whisper."""
-        if self.mic_engine:
+        """
+        Stops microphone recording immediately (<5ms) and transcribes in a background thread.
+        Never blocks the Windows message pump or WebView2 UI thread.
+        Pushes transcribed text to window.onVoiceTranscribed(text).
+        """
+        if not self.mic_engine:
+            return {"status": "error", "text": "", "message": "Microphone engine not available"}
+
+        try:
             wav_bytes = self.mic_engine.stop_recording()
-            groq_key = self.config_mgr.get("groq_api_key", "")
-            text = self.mic_engine.transcribe(wav_bytes, groq_api_key=groq_key)
-            return {"status": "success", "text": text}
-        return {"status": "error", "text": ""}
+        except Exception as e:
+            print(f"[AssistantApi] stop_recording error: {e}")
+            return {"status": "error", "text": "", "message": str(e)}
+
+        if not wav_bytes or len(wav_bytes) < 1000:
+            if self._window:
+                try:
+                    self._window.evaluate_js("if (window.onVoiceTranscribed) { window.onVoiceTranscribed(''); }")
+                except Exception:
+                    pass
+            return {"status": "empty", "text": ""}
+
+        groq_key = self.config_mgr.get("groq_api_key", "")
+
+        def _transcribe_worker(audio_payload, api_key):
+            try:
+                text = self.mic_engine.transcribe(audio_payload, groq_api_key=api_key)
+                if self._window:
+                    clean_text = text.strip() if isinstance(text, str) else ""
+                    js_code = f"if (window.onVoiceTranscribed) {{ window.onVoiceTranscribed({json.dumps(clean_text)}); }}"
+                    self._window.evaluate_js(js_code)
+            except Exception as ex:
+                print(f"[AssistantApi] Asynchronous transcription error: {ex}")
+                if self._window:
+                    try:
+                        self._window.evaluate_js("if (window.onVoiceTranscribed) { window.onVoiceTranscribed(''); }")
+                    except Exception:
+                        pass
+
+        worker = threading.Thread(target=_transcribe_worker, args=(wav_bytes, groq_key), daemon=True)
+        worker.start()
+        return {"status": "transcribing"}
 
     def select_media_files(self):
         """Opens native Windows file dialog for selecting photos or videos."""
