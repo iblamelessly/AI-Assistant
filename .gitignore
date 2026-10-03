@@ -33,6 +33,10 @@ media/uploads/*
 documents/output/*
 !documents/output/.gitkeep
 
+# Screenshots
+screenshots/*
+!screenshots/.gitkeep
+
 # Stale or duplicate worktrees
 AI-Assistant-1/
 AI-Assistant*/

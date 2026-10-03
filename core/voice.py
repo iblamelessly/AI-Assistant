@@ -74,13 +74,14 @@ class VoiceEngine:
 
         return cleaned
 
-    def synthesize_and_speak(self, text: str, play_audio: bool = True) -> str | None:
+    def synthesize_and_speak(self, text: str, play_audio: bool = False) -> str | None:
         """
         Single-pass neural speech synthesis:
         1. Synthesizes high-fidelity British voice audio (edge-tts) ONCE.
-        2. Saves to a local cache file for native Windows MCI speaker playback.
-        3. Spawns background playback directly to default sound device.
-        4. Returns base64 payload for frontend waveform & animation.
+        2. Saves to a local cache file.
+        3. Only plays directly to Windows sound device if play_audio=True (CLI/background mode).
+           In GUI mode, play_audio=False prevents dual-playback echo with WebView2 HTML5 Audio.
+        4. Returns base64 payload for frontend waveform, subtitles, and animation.
         """
         if not self.enabled or not text:
             return None
@@ -94,10 +95,10 @@ class VoiceEngine:
         out_dir.mkdir(parents=True, exist_ok=True)
         speech_file = out_dir / "jarvis_speech.mp3"
 
-        # 1. Edge TTS synthesis
+        # 1. Edge TTS synthesis with authentic British JARVIS cadence (calibrated rate & pitch)
         try:
             import edge_tts
-            communicate = edge_tts.Communicate(clean_text, self.voice)
+            communicate = edge_tts.Communicate(clean_text, self.voice, rate="-3%", pitch="-2Hz")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(communicate.save(str(speech_file)))
@@ -171,8 +172,8 @@ class VoiceEngine:
         return None
 
     def generate_speech_base64(self, text: str) -> str:
-        """Compatibility wrapper: delegates to single-pass synthesis with playback."""
-        return self.synthesize_and_speak(text, play_audio=True)
+        """Synthesizes speech and returns base64 for webview audio playback without double playing."""
+        return self.synthesize_and_speak(text, play_audio=False)
 
     def speak_aloud(self, text: str, block: bool = False):
         """Compatibility wrapper: delegates to single-pass synthesis with playback."""

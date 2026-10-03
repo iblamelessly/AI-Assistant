@@ -57,7 +57,7 @@ class GeminiClient:
         except Exception as e:
             return {"success": False, "error": f"Could not connect to Google Gemini: {e}"}
 
-    def stream_chat(self, messages: list, on_chunk, temperature: float = 0.7, max_tokens: int = 2048, model_override: str = None) -> str:
+    def stream_chat(self, messages: list, on_chunk, temperature: float = 0.7, max_tokens: int = 2048, model_override: str = None, emit_errors: bool = True) -> str:
         """
         Streams completions from Google Gemini.
         Tries native REST streaming (key as query param) first for maximum compatibility,
@@ -65,7 +65,8 @@ class GeminiClient:
         """
         if not self.is_configured():
             err_msg = "⚠️ Google Gemini API key is missing. Please enter your key in Settings."
-            on_chunk(err_msg)
+            if emit_errors:
+                on_chunk(err_msg)
             return err_msg
 
         target_model = model_override or self.model or DEFAULT_GEMINI_MODEL
@@ -73,14 +74,14 @@ class GeminiClient:
             target_model = target_model[7:]
 
         # Try native REST streaming first (most reliable with API keys)
-        result = self._stream_native_rest(messages, on_chunk, target_model, temperature, max_tokens)
-        if result and not result.startswith("❌"):
+        result = self._stream_native_rest(messages, on_chunk, target_model, temperature, max_tokens, emit_errors=False)
+        if result and not result.startswith("❌") and not result.startswith("⚠️"):
             return result
 
         # Fallback: try OpenAI-compatible endpoint
-        return self._stream_openai_compat(messages, on_chunk, target_model, temperature, max_tokens)
+        return self._stream_openai_compat(messages, on_chunk, target_model, temperature, max_tokens, emit_errors=emit_errors)
 
-    def _stream_native_rest(self, messages: list, on_chunk, model: str, temperature: float, max_tokens: int) -> str:
+    def _stream_native_rest(self, messages: list, on_chunk, model: str, temperature: float, max_tokens: int, emit_errors: bool = True) -> str:
         url = f"{GEMINI_REST_ENDPOINT_BASE}/{model}:streamGenerateContent?alt=sse&key={self.api_key}"
 
         contents = []
@@ -110,7 +111,8 @@ class GeminiClient:
             resp = requests.post(url, headers=headers, json=body, stream=True, timeout=60)
             if resp.status_code != 200:
                 err_msg = f"❌ Google Gemini API Error ({resp.status_code}): {resp.text[:160]}"
-                on_chunk(err_msg)
+                if emit_errors:
+                    on_chunk(err_msg)
                 return err_msg
 
             full_content = ""
@@ -143,7 +145,7 @@ class GeminiClient:
         except Exception as ex:
             return f"❌ Google Gemini streaming error: {ex}"
 
-    def _stream_openai_compat(self, messages: list, on_chunk, model: str, temperature: float, max_tokens: int) -> str:
+    def _stream_openai_compat(self, messages: list, on_chunk, model: str, temperature: float, max_tokens: int, emit_errors: bool = True) -> str:
         """Fallback: stream via Google's OpenAI-compatible endpoint (Bearer auth)."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -190,5 +192,6 @@ class GeminiClient:
             print(f"[GeminiClient] OpenAI-compat endpoint error: {e}")
 
         err_msg = "❌ Google Gemini could not generate a response via any endpoint."
-        on_chunk(err_msg)
+        if emit_errors:
+            on_chunk(err_msg)
         return err_msg

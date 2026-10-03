@@ -123,22 +123,100 @@ class SuperAIRouter:
         return cls.MODELS["gpt-oss-120b"]["id"], "Intellectual reasoning engine"
 
     @classmethod
-    def get_fallback_chain(cls, primary_model_id: str, google_configured: bool = False) -> List[str]:
+    def classify_kind(cls, prompt: str, attachments: list = None) -> str:
+        """High-level task family used to pick suitable fallback models."""
+        if attachments:
+            return "multimodal"
+
+        text = (prompt or "").strip()
+        lower = text.lower()
+        word_count = len(text.split())
+
+        if "```" in text or ("{" in text and "}" in text) or "<html" in lower or "<script" in lower:
+            return "code"
+        if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.CODE_KEYWORDS):
+            return "code"
+        if word_count <= 8 and any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.FAST_CONVERSATIONAL_KEYWORDS):
+            return "chat"
+        if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS) or word_count > 35 or "\n\n" in text:
+            return "reasoning"
+        return "general"
+
+    @classmethod
+    def get_fallback_chain(cls, primary_model_id: str, google_configured: bool = False, prompt: str = "", attachments: list = None) -> List[str]:
         """
-        Returns an ordered cascade list of models to try if the primary encounters rate limits (429) or errors.
+        Ordered list of suitable models for this question. Super AI tries each in order
+        and only fails after every candidate has been exhausted.
         """
-        all_ids = [
+        kind = cls.classify_kind(prompt, attachments)
+        groq_ids = [
             cls.MODELS["gpt-oss-120b"]["id"],
             cls.MODELS["qwen-coder"]["id"],
-            cls.MODELS["gpt-oss-20b"]["id"]
+            cls.MODELS["gpt-oss-20b"]["id"],
+            cls.MODELS["allam"]["id"],
         ]
-        if google_configured:
-            all_ids.insert(1, cls.MODELS["gemini-3.8-flash"]["id"])
-            all_ids.append(cls.MODELS["gemini-3.5-flash"]["id"])
-        all_ids.append(cls.MODELS["allam"]["id"])
+        gemini_ids = [
+            cls.MODELS["gemini-3.8-flash"]["id"],
+            cls.MODELS["gemini-3.5-flash"]["id"],
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
+        ]
 
-        chain = [primary_model_id]
-        for m in all_ids:
+        if kind == "code":
+            suitable = [
+                cls.MODELS["gemini-3.5-flash"]["id"],
+                cls.MODELS["qwen-coder"]["id"],
+                cls.MODELS["gemini-3.8-flash"]["id"],
+                "gemini-3.6-flash",
+                cls.MODELS["gpt-oss-120b"]["id"],
+                cls.MODELS["gpt-oss-20b"]["id"],
+            ]
+        elif kind == "multimodal":
+            suitable = [
+                cls.MODELS["gemini-3.8-flash"]["id"],
+                cls.MODELS["gemini-3.5-flash"]["id"],
+                "gemini-3.6-flash",
+                cls.MODELS["gpt-oss-120b"]["id"],
+            ]
+        elif kind == "chat":
+            suitable = [
+                cls.MODELS["gpt-oss-20b"]["id"],
+                "gemini-3.5-flash-lite",
+                cls.MODELS["gemini-3.5-flash"]["id"],
+                cls.MODELS["gpt-oss-120b"]["id"],
+                cls.MODELS["allam"]["id"],
+            ]
+        elif kind == "reasoning":
+            suitable = [
+                cls.MODELS["gemini-3.8-flash"]["id"],
+                cls.MODELS["gpt-oss-120b"]["id"],
+                cls.MODELS["gemini-3.5-flash"]["id"],
+                cls.MODELS["qwen-coder"]["id"],
+                cls.MODELS["gpt-oss-20b"]["id"],
+            ]
+        else:
+            suitable = [
+                cls.MODELS["gemini-3.8-flash"]["id"],
+                cls.MODELS["gpt-oss-120b"]["id"],
+                cls.MODELS["gemini-3.5-flash"]["id"],
+                cls.MODELS["qwen-coder"]["id"],
+                cls.MODELS["gpt-oss-20b"]["id"],
+                cls.MODELS["allam"]["id"],
+            ]
+
+        if not google_configured:
+            suitable = [m for m in suitable if m not in gemini_ids and not str(m).startswith("gemini")]
+
+        chain = []
+        if primary_model_id:
+            if google_configured or not str(primary_model_id).startswith("gemini"):
+                chain.append(primary_model_id)
+        for m in suitable:
+            if m not in chain:
+                chain.append(m)
+        # Last-resort extras still valid for the provider
+        extras = (gemini_ids if google_configured else []) + groq_ids
+        for m in extras:
             if m not in chain:
                 chain.append(m)
         return chain

@@ -209,7 +209,7 @@ class GroqClient:
         except Exception as e:
             return {"success": False, "error": f"Could not connect to Groq: {e}"}
 
-    def stream_chat(self, messages: list, on_chunk, temperature: float = 0.6, max_tokens: int = 2048, model_override: str = None) -> str:
+    def stream_chat(self, messages: list, on_chunk, temperature: float = 0.6, max_tokens: int = 2048, model_override: str = None, allow_cascade: bool = True, emit_errors: bool = True) -> str:
         """
         Streams completions from Groq using Server-Sent Events (SSE).
         Dynamically routes queries when model is 'super-ai' and cascades through
@@ -217,7 +217,8 @@ class GroqClient:
         """
         if not self.is_configured():
             err_msg = "⚠️ Groq API key is missing. Please enter your free key in Settings (get it at console.groq.com)."
-            on_chunk(err_msg)
+            if emit_errors:
+                on_chunk(err_msg)
             return err_msg
 
         from .model_router import SuperAIRouter
@@ -238,8 +239,12 @@ class GroqClient:
         self.last_model_used = target_model
         self.last_router_reason = reason
 
-        # Cascade fallback chain
-        fallback_chain = SuperAIRouter.get_fallback_chain(target_model)
+        # Cascade fallback chain (or a single model when the caller is already cascading)
+        if allow_cascade:
+            fallback_chain = SuperAIRouter.get_fallback_chain(target_model, prompt=user_prompt)
+            fallback_chain = [m for m in fallback_chain if m and not str(m).startswith("gemini")]
+        else:
+            fallback_chain = [target_model] if target_model and not str(target_model).startswith("gemini") else []
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -275,7 +280,8 @@ class GroqClient:
                     continue
                 elif response.status_code == 401:
                     err_msg = "❌ Error: Invalid Groq API Key. Please check your key in Settings."
-                    on_chunk(err_msg)
+                    if emit_errors:
+                        on_chunk(err_msg)
                     return err_msg
                 elif response.status_code != 200:
                     print(f"[GroqClient] Model {candidate_model} returned {response.status_code}: {response.text[:100]}")
@@ -325,7 +331,8 @@ class GroqClient:
 
         # If all candidates failed:
         err_msg = "❌ All AI models temporarily unavailable or rate limited. Please try again shortly."
-        on_chunk(err_msg)
+        if emit_errors:
+            on_chunk(err_msg)
         return err_msg
 
     def _do_stream(self, messages: list, on_chunk, model: str, max_tokens: int = 2048) -> str | None:

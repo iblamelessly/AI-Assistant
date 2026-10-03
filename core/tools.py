@@ -270,27 +270,122 @@ class AssistantTools:
 
     @staticmethod
     def take_screenshot(filename: str = None) -> dict:
-        """Captures a screenshot of the laptop screen."""
+        """Captures a high-resolution screenshot of the laptop screen using Win32 GDI BitBlt with fallbacks."""
+        screenshot_dir = Path(os.getcwd()) / "screenshots"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+
+        if not filename:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"screenshot_{timestamp}.png"
+
+        save_path = screenshot_dir / filename
+        captured = False
+        last_error = ""
+
+        # 1. Primary: Win32 GDI BitBlt via ctypes (handles high DPI, multi-monitor, and avoids Pillow screen grab failed)
         try:
-            from PIL import ImageGrab
-            screenshot_dir = Path(os.getcwd()) / "screenshots"
-            screenshot_dir.mkdir(parents=True, exist_ok=True)
+            import ctypes
+            from ctypes import wintypes
+            from PIL import Image
 
-            if not filename:
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"screenshot_{timestamp}.png"
+            user32 = ctypes.windll.user32
+            gdi32 = ctypes.windll.gdi32
 
-            save_path = screenshot_dir / filename
-            img = ImageGrab.grab()
-            img.save(save_path)
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                try:
+                    user32.SetProcessDPIAware()
+                except Exception:
+                    pass
 
+            w = user32.GetSystemMetrics(0)
+            h = user32.GetSystemMetrics(1)
+            hdesktop = user32.GetDesktopWindow()
+            desktop_dc = user32.GetWindowDC(hdesktop)
+            mem_dc = gdi32.CreateCompatibleDC(desktop_dc)
+            bitmap = gdi32.CreateCompatibleBitmap(desktop_dc, w, h)
+            old_bitmap = gdi32.SelectObject(mem_dc, bitmap)
+
+            # SRCCOPY = 0x00CC0020, CAPTUREBLT = 0x40000000
+            gdi32.BitBlt(mem_dc, 0, 0, w, h, desktop_dc, 0, 0, 0x00CC0020 | 0x40000000)
+
+            class BITMAPINFOHEADER(ctypes.Structure):
+                _fields_ = [
+                    ('biSize', wintypes.DWORD),
+                    ('biWidth', wintypes.LONG),
+                    ('biHeight', wintypes.LONG),
+                    ('biPlanes', wintypes.WORD),
+                    ('biBitCount', wintypes.WORD),
+                    ('biCompression', wintypes.DWORD),
+                    ('biSizeImage', wintypes.DWORD),
+                    ('biXPelsPerMeter', wintypes.LONG),
+                    ('biYPelsPerMeter', wintypes.LONG),
+                    ('biClrUsed', wintypes.DWORD),
+                    ('biClrImportant', wintypes.DWORD)
+                ]
+
+            bmi = BITMAPINFOHEADER()
+            bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.biWidth = w
+            bmi.biHeight = -h  # top-down
+            bmi.biPlanes = 1
+            bmi.biBitCount = 32
+            bmi.biCompression = 0
+
+            buf = ctypes.create_string_buffer(w * h * 4)
+            gdi32.GetDIBits(mem_dc, bitmap, 0, h, buf, ctypes.byref(bmi), 0)
+
+            gdi32.SelectObject(mem_dc, old_bitmap)
+            gdi32.DeleteObject(bitmap)
+            gdi32.DeleteDC(mem_dc)
+            user32.ReleaseDC(hdesktop, desktop_dc)
+
+            img = Image.frombuffer('RGBA', (w, h), buf, 'raw', 'BGRA', 0, 1)
+            img = img.convert('RGB')
+            img.save(save_path, 'PNG')
+            captured = True
+        except Exception as e:
+            last_error = f"Win32 GDI error: {e}"
+
+        # 2. Secondary fallback: PIL ImageGrab
+        if not captured or not save_path.exists() or save_path.stat().st_size == 0:
+            try:
+                from PIL import ImageGrab
+                img = ImageGrab.grab(all_screens=True)
+                img.save(save_path)
+                captured = True
+            except Exception as e:
+                last_error = f"{last_error} | ImageGrab error: {e}"
+
+        # 3. Tertiary fallback: PowerShell .NET Graphics.CopyFromScreen
+        if not captured or not save_path.exists() or save_path.stat().st_size == 0:
+            try:
+                escaped_target = str(save_path.resolve()).replace("'", "''")
+                ps_script = (
+                    "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "
+                    "$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+                    "$bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height); "
+                    "$g = [System.Drawing.Graphics]::FromImage($bmp); "
+                    "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); "
+                    f"$bmp.Save('{escaped_target}', [System.Drawing.Imaging.ImageFormat]::Png); "
+                    "$g.Dispose(); $bmp.Dispose();"
+                )
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, timeout=15)
+                if save_path.exists() and save_path.stat().st_size > 0:
+                    captured = True
+            except Exception as e:
+                last_error = f"{last_error} | PowerShell error: {e}"
+
+        if captured and save_path.exists() and save_path.stat().st_size > 0:
             return {
                 "success": True,
-                "path": str(save_path),
-                "summary": f"Captured screenshot and saved to: {save_path}"
+                "path": str(save_path.resolve()),
+                "output_path": str(save_path.resolve()),
+                "filename": filename,
+                "summary": f"Captured screenshot: '{filename}' saved to screenshots folder."
             }
-        except Exception as e:
-            return {"success": False, "error": str(e), "summary": f"Failed to take screenshot: {e}"}
+        return {"success": False, "error": last_error or "Unable to capture screen", "summary": f"Failed to take screenshot: {last_error}"}
 
     @staticmethod
     def kill_process(process_name: str) -> dict:

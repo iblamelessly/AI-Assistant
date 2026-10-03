@@ -136,7 +136,10 @@ class AssistantEngine:
             "7. Interactive Suggestion Buttons: Whenever you provide options, recommendations, follow-up actions, or web links, ALWAYS present them as interactive suggestion chips using the format:\n"
             "[Suggestion: Option 1 | Option 2 | Option 3 | Cancel]\n"
             "Never write plain brackets like '[Option 1] [Option 2]' without the [Suggestion: ...] wrapper.\n"
-            "8. Professional Document Generation: When asked to create presentations (.pptx), Word documents (.docx), or PDF reports (.pdf), use create_presentation, create_document, or create_pdf with structured topics. Craft thorough, beautifully formatted documents with executive styling.\n\n"
+            "8. Professional Document Generation: When asked to create presentations (.pptx), Word documents (.docx), or PDF reports (.pdf), use create_presentation, create_document, or create_pdf with structured topics. Craft thorough, beautifully formatted documents with executive styling.\n"
+            "9. Conversational Continuity & Pronoun Resolution: Always maintain deep continuity with the conversation history. When the user uses pronouns or implicit references ('it', 'that', 'this', 'them', 'the file', 'the image', 'the document', 'the presentation', 'open it', 'delete it', 'explain that'):\n"
+            "- Resolve the pronoun to the specific file, code, topic, media, or action discussed in preceding turns.\n"
+            "- NEVER interpret pronouns like 'it', 'that', or 'this' as literal application or file names.\n\n"
             "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
             "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
             "- Run terminal/PowerShell: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
@@ -426,9 +429,39 @@ class AssistantEngine:
 
         return None
 
-    def _detect_fast_intent(self, user_message: str):
-        """Fast-path detector for immediate direct user commands."""
+    def _detect_fast_intent(self, user_message: str, session_id: str = None):
+        """Fast-path detector for immediate direct user commands with conversational context awareness."""
         msg = user_message.lower().strip()
+
+        # Pronoun & Context Resolution ("open it", "show it", "view it", "launch it", "open that", "open the file", "open screenshot")
+        pronoun_open_match = re.search(
+            r"^(?:please\s+)?(?:open|show|view|launch|display|run)\s+(it|that|this|them|the\s+file|the\s+document|the\s+presentation|the\s+image|the\s+photo|the\s+video|the\s+screenshot|the\s+script|last\s+file|previous\s+file)$",
+            msg, re.IGNORECASE
+        )
+        if pronoun_open_match:
+            recent_target = self._resolve_recent_target(session_id)
+            if recent_target and os.path.exists(recent_target):
+                res = AssistantTools.open_file(recent_target)
+                self.latest_media = {"name": Path(recent_target).name, "path": recent_target, "type": self._media_kind_for_path(recent_target)}
+                return {
+                    "tool": "open_file",
+                    "param": recent_target,
+                    "result": {
+                        "success": True,
+                        "output_path": recent_target,
+                        "path": recent_target,
+                        "summary": f"Opened **{Path(recent_target).name}** for you, sir."
+                    }
+                }
+            else:
+                return {
+                    "tool": "open_file",
+                    "param": "it",
+                    "result": {
+                        "success": False,
+                        "summary": "I couldn't identify which file or media you would like me to open, sir. Could you specify its name?"
+                    }
+                }
 
         # Hearing / Microphone / Speech Status Check (e.g. "can you hear me", "are you listening", "testing mic")
         if re.search(r"^(?:hello\s*,?\s*)?(?:can\s+you\s+hear\s+me|are\s+you\s+listening|do\s+you\s+hear\s+me|testing\s+mic(?:rophone)?|mic(?:rophone)?\s+test|can\s+you\s+speak|test\s+voice|test\s+audio)\b", msg, re.IGNORECASE):
@@ -517,8 +550,10 @@ class AssistantEngine:
             return {"tool": "set_volume", "param": "mute", "result": res}
 
         # Screenshot
-        if any(w in msg for w in ["take a screenshot", "take screenshot", "capture screen"]):
+        if re.search(r"^(?:please\s+)?(?:take\s+(?:a\s+)?screenshot|capture\s+(?:the\s+)?screen|screenshot|screen\s*shot)\b", msg, re.IGNORECASE):
             res = AssistantTools.take_screenshot()
+            if res.get("success") and res.get("output_path"):
+                self.latest_media = {"name": Path(res["output_path"]).name, "path": res["output_path"], "type": "image"}
             return {"tool": "take_screenshot", "param": "", "result": res}
 
         # System stats
@@ -587,7 +622,7 @@ class AssistantEngine:
         open_match = re.search(r"^(?:please\s+)?(?:open|launch|start|run)\s+([a-zA-Z0-9\s._-]+)$", msg)
         if open_match:
             app_target = open_match.group(1).strip()
-            ignored_words = ["the door", "up", "a discussion", "a topic", "eyes", "mouth", "mind", "settings"]
+            ignored_words = ["it", "that", "this", "them", "the door", "up", "a discussion", "a topic", "eyes", "mouth", "mind", "settings", "the file", "the app", "file", "app", "the screenshot", "the image", "the video"]
             if app_target not in ignored_words and len(app_target) > 1:
                 res = app_launcher.resolve_and_launch(app_target)
                 if res.get("doubt"):
@@ -668,6 +703,230 @@ class AssistantEngine:
                 return {"tool": "create_pdf", "param": topic, "result": res}
 
         return None
+
+    def _result_media_path(self, result: dict):
+        if not isinstance(result, dict):
+            return None
+        p = result.get("output_path") or result.get("path")
+        if p and os.path.exists(str(p)):
+            return str(p)
+        return None
+
+    def _media_kind_for_path(self, path: str) -> str:
+        ext = Path(path).suffix.lower()
+        if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"]:
+            return "image"
+        if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]:
+            return "video"
+        if ext in [".mp3", ".wav", ".m4a"]:
+            return "audio"
+        if ext == ".pptx":
+            return "pptx"
+        if ext == ".docx":
+            return "docx"
+        if ext == ".pdf":
+            return "pdf"
+        return "document"
+
+    def _append_preview_markup(self, text: str, path: str) -> str:
+        """Attach inline preview tags so the UI can show images, screenshots, and videos."""
+        if not path:
+            return text
+        kind = self._media_kind_for_path(path)
+        self.latest_media = {"name": Path(path).name, "path": path, "type": kind}
+        display = text or ""
+        if kind in ["pptx", "docx", "pdf"]:
+            if "[DOCUMENT:" not in display:
+                display += f"\n\n[DOCUMENT: {kind} | {path}]\n\n[Suggestion: Open Document | Reveal in Folder]"
+        elif kind == "image":
+            if "[MEDIA: image" not in display:
+                display += f"\n\n[MEDIA: image | {path}]\n\n[Suggestion: View Image | Open Folder | Make Anime Style | Make Cyberpunk]"
+        elif kind == "video":
+            if "[MEDIA: video" not in display:
+                display += f"\n\n[MEDIA: video | {path}]\n\n[Suggestion: Play Video | Open Folder | Generate Another Video]"
+        elif kind == "audio":
+            if "[MEDIA: audio" not in display:
+                display += f"\n\n[MEDIA: audio | {path}]"
+        return display
+
+    def _resolve_recent_target(self, session_id: str = None) -> str | None:
+        """Resolves pronouns ('it', 'that', 'this', 'the file', 'the screenshot') to the most recent target path."""
+        # 1. Check self.latest_media
+        if self.latest_media and self.latest_media.get("path"):
+            p = str(self.latest_media["path"]).strip()
+            if os.path.exists(p):
+                return p
+
+        # 2. Check recent messages in history for media/document paths or tool results
+        if session_id:
+            session = self.history_mgr.get_session(session_id)
+            if session and "messages" in session:
+                for m in reversed(session["messages"]):
+                    content = m.get("content", "")
+                    tag_match = re.search(r"\[(?:MEDIA|DOCUMENT):\s*[^|]+\|\s*([^\]]+)\]", content)
+                    if tag_match:
+                        cand = tag_match.group(1).strip()
+                        if os.path.exists(cand):
+                            return cand
+
+                    tool_info = m.get("tool_info")
+                    if isinstance(tool_info, dict):
+                        res = tool_info.get("result", {})
+                        if isinstance(res, dict):
+                            cand = res.get("output_path") or res.get("path")
+                            if cand and os.path.exists(str(cand)):
+                                return str(cand)
+
+        # 3. Check screenshots folder for latest screenshot
+        screenshot_dir = Path(os.getcwd()) / "screenshots"
+        if screenshot_dir.exists():
+            shots = sorted(screenshot_dir.glob("*.png"), key=lambda f: f.stat().st_mtime, reverse=True)
+            if shots:
+                return str(shots[0].resolve())
+
+        return None
+
+    def _is_failed_model_output(self, text: str) -> bool:
+        if not text or not str(text).strip():
+            return True
+        sample = str(text).strip()
+        sample_lower = sample.lower()
+
+        if sample.startswith("❌") or sample.startswith("⚠️"):
+            return True
+
+        error_markers = (
+            "groq api key",
+            "gemini api key",
+            "all ai models temporarily unavailable",
+            "could not connect to model",
+            "google gemini could not generate",
+            "google gemini api error",
+            "gemini generated an empty",
+            "groq api error",
+            "invalid groq api key",
+            "ollama error",
+            "rate limit",
+            "rate_limit",
+            "quota exceeded",
+            "resource has been exhausted",
+            "temporarily unavailable",
+            "service unavailable",
+            "model not found",
+            "invalid api key",
+            "unauthorized",
+            "connection error",
+            "http 400",
+            "http 401",
+            "http 403",
+            "http 404",
+            "http 429",
+            "http 500",
+            "http 503",
+        )
+        return any(m in sample_lower for m in error_markers)
+
+    def _stream_super_ai(self, conversation_messages, on_chunk, set_status, user_message, attachments) -> str:
+        """
+        Super AI cascade: try the best model first, then other suitable models.
+        Errors are silently suppressed during model switches and only shown if every suitable model fails.
+        """
+        google_ok = self.gemini_client.is_configured()
+        groq_ok = self.groq_client.is_configured()
+        primary, reason = SuperAIRouter.classify_prompt(
+            user_message, attachments=attachments, google_configured=google_ok
+        )
+        chain = SuperAIRouter.get_fallback_chain(
+            primary, google_configured=google_ok, prompt=user_message, attachments=attachments
+        )
+
+        usable = []
+        for mid in chain:
+            if not mid or mid == "super-ai":
+                continue
+            if str(mid).startswith("gemini"):
+                if google_ok:
+                    usable.append(mid)
+            elif groq_ok:
+                usable.append(mid)
+
+        groq_auth_dead = False
+        gemini_auth_dead = False
+        last_error = ""
+
+        for idx, model_id in enumerate(usable):
+            is_gemini = str(model_id).startswith("gemini")
+            if is_gemini and gemini_auth_dead:
+                continue
+            if (not is_gemini) and groq_auth_dead:
+                continue
+
+            friendly = SuperAIRouter.get_friendly_name(model_id)
+            if idx == 0:
+                set_status("Thinking...", "thinking", f"⚡ Super AI routing to {friendly} ({reason})...")
+            else:
+                set_status("Thinking...", "thinking", f"⚡ {friendly} unavailable — switching to next suitable model...")
+
+            pieces = []
+            flushed = {"ok": False}
+
+            def buffered_chunk(piece):
+                if not piece:
+                    return
+                pieces.append(piece)
+                combined = "".join(pieces).lstrip()
+                if flushed["ok"]:
+                    on_chunk(piece)
+                    return
+                # Check for failure markers in the initial buffer
+                if self._is_failed_model_output(combined):
+                    return
+                # Only flush once we have confirmed the response is clean
+                if len(combined) >= 20 or "\n" in combined:
+                    flushed["ok"] = True
+                    for part in pieces:
+                        on_chunk(part)
+
+            try:
+                if is_gemini:
+                    result = self.gemini_client.stream_chat(
+                        conversation_messages, buffered_chunk, model_override=model_id, emit_errors=False
+                    )
+                else:
+                    result = self.groq_client.stream_chat(
+                        conversation_messages,
+                        buffered_chunk,
+                        model_override=model_id,
+                        allow_cascade=False,
+                        emit_errors=False,
+                    )
+            except Exception as ex:
+                last_error = str(ex)
+                print(f"[SuperAI] {model_id} raised: {ex}")
+                continue
+
+            if result and "Invalid Groq API Key" in result:
+                groq_auth_dead = True
+                last_error = result
+                continue
+            if result and "Google Gemini API key is missing" in result:
+                gemini_auth_dead = True
+                last_error = result
+                continue
+
+            if not self._is_failed_model_output(result):
+                self.groq_client.last_model_used = model_id
+                self.groq_client.last_router_reason = reason
+                if not flushed["ok"]:
+                    on_chunk(result)
+                return result
+
+            last_error = result or last_error
+            print(f"[SuperAI] {model_id} failed silently, cascading to next model...")
+
+        err_msg = "❌ All suitable AI models failed to answer this request. Please try again in a moment."
+        on_chunk(err_msg)
+        return err_msg
 
     def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None, on_status=None, voice_mode: bool = False):
         """
@@ -845,7 +1104,7 @@ class AssistantEngine:
         )
 
         # 5. Check for fast-path direct tool execution
-        fast_action = self._detect_fast_intent(user_message)
+        fast_action = self._detect_fast_intent(user_message, session_id=session_id)
         if not fast_action:
             fast_action = self._unified_ai_dispatch(user_message)
         tool_action_performed = None
@@ -905,7 +1164,7 @@ class AssistantEngine:
                 self.history_mgr.add_message(session_id, "assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64)
                 return
-            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
+            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot"]:
                 t_tool = fast_action.get("tool")
                 if t_tool in ["create_presentation", "create_document", "create_pdf"]:
                     set_status("Creating...", "creating", f"Generating slides and formatting '{fast_action.get('param', 'document')}'...")
@@ -920,39 +1179,18 @@ class AssistantEngine:
 
                 res = fast_action.get("result", {})
                 summary_text = res.get("summary") or res.get("action") or "Action completed."
-                out_p = res.get("output_path")
-
-                if out_p:
-                    ext = Path(out_p).suffix.lower()
-                    mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] else (
-                        "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
-                            "audio" if ext in [".mp3", ".wav", ".m4a"] else (
-                                "pptx" if ext == ".pptx" else (
-                                    "docx" if ext == ".docx" else (
-                                        "pdf" if ext == ".pdf" else "document"
-                                    )
-                                )
-                            )
-                        )
-                    )
-                    self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
-                    if ext in [".pptx", ".docx", ".pdf"]:
-                        resp_msg = f"{summary_text}\n\n[DOCUMENT: {ext[1:]} | {out_p}]\n\n[Suggestion: Open Document | Reveal in Folder | Create PDF | Create PPT]"
-                    elif mtype == "image":
-                        resp_msg = f"{summary_text}\n\n[MEDIA: image | {out_p}]\n\n[Suggestion: View Image | Open Folder | Make Anime Style | Make Cyberpunk]"
-                    elif mtype == "video":
-                        resp_msg = f"{summary_text}\n\n[MEDIA: video | {out_p}]\n\n[Suggestion: Play Video | Open Folder | Generate Another Video | Create Presentation]"
-                    else:
-                        resp_msg = f"{summary_text}\n\n[MEDIA: {mtype} | {out_p}]"
-                else:
-                    resp_msg = summary_text
+                out_p = self._result_media_path(res)
+                resp_msg = self._append_preview_markup(summary_text, out_p) if out_p else summary_text
 
                 on_chunk(resp_msg)
                 set_status("Speaking...", "speaking", "Synthesizing English voice response...")
+                audio_b64 = None
                 if self.voice_engine.is_enabled():
-                    audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=True)
-                else:
-                    audio_b64 = None
+                    try:
+                        speech_text = resp_msg.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
+                        audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
+                    except Exception as e:
+                        print(f"[AssistantEngine] Voice synthesis error: {e}")
                 self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
                 self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=fast_action)
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
@@ -984,24 +1222,55 @@ class AssistantEngine:
 
         conversation_messages.append({"role": "user", "content": user_prompt_content})
 
-        # 6. Stream from active provider (Google Gemini, Groq, or Ollama)
+        # 6. Stream from active provider (Super AI cascade, Gemini, Groq, or Ollama)
         full_response = ""
         is_google_configured = self.gemini_client.is_configured()
+        image_paths = [
+            a["path"] for a in (attachments or [])
+            if a.get("type") == "image" and os.path.exists(a.get("path", ""))
+        ]
 
-        # If user explicitly selected a Gemini model
-        if self.model.startswith("gemini-") and is_google_configured:
+        if self.model == "super-ai" and (self.groq_client.is_configured() or is_google_configured):
+            full_response = self._stream_super_ai(
+                conversation_messages, on_chunk, set_status, user_message, attachments
+            )
+            if self._is_failed_model_output(full_response) and image_paths and self.groq_client.is_configured():
+                set_status("Analyzing...", "analyzing", "Trying vision fallback after model cascade...")
+                vision_bits = []
+                flushed = {"ok": False}
+
+                def vision_chunk(piece):
+                    if not piece:
+                        return
+                    vision_bits.append(piece)
+                    combined = "".join(vision_bits).lstrip()
+                    if flushed["ok"]:
+                        on_chunk(piece)
+                        return
+                    if combined.startswith("❌") or combined.startswith("⚠️"):
+                        return
+                    flushed["ok"] = True
+                    for part in vision_bits:
+                        on_chunk(part)
+
+                vision_res = self.groq_client.stream_vision_chat(
+                    user_text=user_message, image_paths=image_paths, on_chunk=vision_chunk
+                )
+                if not self._is_failed_model_output(vision_res):
+                    full_response = vision_res
+                    if not flushed["ok"]:
+                        on_chunk(vision_res)
+            if self._is_failed_model_output(full_response):
+                err_msg = "❌ All suitable AI models failed to answer this request. Please try again in a moment."
+                full_response = err_msg
+                on_chunk(err_msg)
+        elif self.model.startswith("gemini-") and is_google_configured:
             friendly_name = SuperAIRouter.get_friendly_name(self.model)
             set_status("Thinking...", "thinking", f"Reasoning with {friendly_name}...")
             full_response = self.gemini_client.stream_chat(conversation_messages, on_chunk, model_override=self.model)
             self.groq_client.last_model_used = self.model
         elif self.provider == "groq" and self.groq_client.is_configured():
-            # Detect image attachments — route to vision model if any images present
-            image_paths = [
-                a["path"] for a in (attachments or [])
-                if a.get("type") == "image" and os.path.exists(a.get("path", ""))
-            ]
             if image_paths and not is_google_configured:
-                # Vision Q&A — send actual image bytes to Groq's vision model
                 set_status("Analyzing...", "analyzing", "Inspecting attached media with Vision AI...")
                 full_response = self.groq_client.stream_vision_chat(
                     user_text=user_message,
@@ -1009,20 +1278,8 @@ class AssistantEngine:
                     on_chunk=on_chunk
                 )
             else:
-                if self.model == "super-ai":
-                    target_model, reason = SuperAIRouter.classify_prompt(
-                        user_message, attachments=attachments, google_configured=is_google_configured
-                    )
-                    friendly_name = SuperAIRouter.get_friendly_name(target_model)
-                    set_status("Thinking...", "thinking", f"⚡ Super AI routing to {friendly_name}...")
-                    if target_model.startswith("gemini-") and is_google_configured:
-                        full_response = self.gemini_client.stream_chat(conversation_messages, on_chunk, model_override=target_model)
-                        self.groq_client.last_model_used = target_model
-                    else:
-                        full_response = self.groq_client.stream_chat(conversation_messages, on_chunk, model_override=target_model)
-                else:
-                    set_status("Thinking...", "thinking", f"Reasoning with {self.model}...")
-                    full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
+                set_status("Thinking...", "thinking", f"Reasoning with {self.model}...")
+                full_response = self.groq_client.stream_chat(conversation_messages, on_chunk)
         else:
             # Fallback to local Ollama
             set_status("Thinking...", "thinking", f"Reasoning with local Ollama ({self.ollama_model})...")
@@ -1164,29 +1421,9 @@ class AssistantEngine:
 
         # Check if media or document output was generated
         active_res = (tool_action_performed or fast_action or {}).get("result", {})
-        if active_res and active_res.get("output_path"):
-            out_p = active_res["output_path"]
-            ext = Path(out_p).suffix.lower()
-            mtype = "image" if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] else (
-                "video" if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] else (
-                    "audio" if ext in [".mp3", ".wav", ".m4a"] else (
-                        "pptx" if ext == ".pptx" else (
-                            "docx" if ext == ".docx" else (
-                                "pdf" if ext == ".pdf" else "document"
-                            )
-                        )
-                    )
-                )
-            )
-            self.latest_media = {"name": Path(out_p).name, "path": out_p, "type": mtype}
-            if ext in [".pptx", ".docx", ".pdf"] and "[DOCUMENT:" not in clean_display:
-                clean_display += f"\n\n[DOCUMENT: {ext[1:]} | {out_p}]\n\n[Suggestion: Open Document | Reveal in Folder]"
-            elif ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"] and "[MEDIA: image" not in clean_display:
-                clean_display += f"\n\n[MEDIA: image | {out_p}]"
-            elif ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"] and "[MEDIA: video" not in clean_display:
-                clean_display += f"\n\n[MEDIA: video | {out_p}]"
-            elif ext in [".mp3", ".wav", ".m4a"] and "[MEDIA: audio" not in clean_display:
-                clean_display += f"\n\n[MEDIA: audio | {out_p}]"
+        out_p = self._result_media_path(active_res)
+        if out_p:
+            clean_display = self._append_preview_markup(clean_display, out_p)
 
         # 9. Voice Synthesis
         audio_b64 = None
@@ -1194,7 +1431,7 @@ class AssistantEngine:
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             try:
                 speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
-                audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=True)
+                audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
             except Exception as e:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")
 
