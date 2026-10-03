@@ -103,37 +103,45 @@ window.removeAttachment = function(idx) {
   renderAttachmentPreviews();
 };
 
+function createMediaCardHtml(type, filePath, caption) {
+  if (!filePath) return "";
+  const cleanPath = filePath.trim();
+  const fileName = cleanPath.split(/[\\/]/).pop();
+  const cleanArg = cleanPath.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const typeLower = (type || "image").toLowerCase();
+  const typeLabel = typeLower === 'image' ? '🖼️ Photo / Screenshot' : (typeLower === 'video' ? '🎬 Video' : '🎵 Audio');
+
+  let mediaElem = "";
+  if (typeLower === "image") {
+    mediaElem = `<img class="chat-media-img" data-media-src="${escapeHtml(cleanPath)}" alt="${escapeHtml(fileName)}" onclick="openMediaLightbox('${cleanArg}', 'image')" />`;
+  } else if (typeLower === "video") {
+    mediaElem = `<video class="chat-media-vid" data-media-src="${escapeHtml(cleanPath)}" controls preload="metadata"></video>`;
+  } else if (typeLower === "audio") {
+    mediaElem = `<audio class="chat-media-aud" data-media-src="${escapeHtml(cleanPath)}" controls></audio>`;
+  }
+
+  const subLabel = caption ? `<div class="chat-media-caption" style="padding:4px 8px 6px 8px; font-size:11px; color:var(--text-muted);">${escapeHtml(caption)}</div>` : "";
+
+  return `
+    <div class="chat-media-card">
+      <div class="chat-media-header">
+        <span class="chat-media-badge">${typeLabel}</span>
+        <span class="chat-media-filename" title="${escapeHtml(cleanPath)}">${escapeHtml(fileName)}</span>
+        <button class="chat-media-btn-reveal" onclick="revealMediaFile('${cleanArg}')" title="Show in File Explorer">📂 Open Folder</button>
+      </div>
+      <div class="chat-media-content">
+        ${mediaElem}
+      </div>
+      ${subLabel}
+    </div>
+  `;
+}
+
 function renderMediaTags(htmlText) {
   if (!htmlText) return "";
   const mediaRegex = /\[MEDIA:\s*(image|video|audio)\s*\|\s*([^\]]+)\]/gi;
   return htmlText.replace(mediaRegex, function(match, type, filePath) {
-    const cleanPath = filePath.trim();
-    const fileName = cleanPath.split(/[\\/]/).pop();
-    const cleanArg = cleanPath.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-    const typeLower = type.toLowerCase();
-    const typeLabel = typeLower === 'image' ? '🖼️ Photo' : (typeLower === 'video' ? '🎬 Video' : '🎵 Audio');
-
-    let mediaElem = "";
-    if (typeLower === "image") {
-      mediaElem = `<img class="chat-media-img" data-media-src="${cleanArg}" alt="${escapeHtml(fileName)}" onclick="openMediaLightbox('${cleanArg}', 'image')" />`;
-    } else if (typeLower === "video") {
-      mediaElem = `<video class="chat-media-vid" data-media-src="${cleanArg}" controls preload="metadata"></video>`;
-    } else if (typeLower === "audio") {
-      mediaElem = `<audio class="chat-media-aud" data-media-src="${cleanArg}" controls></audio>`;
-    }
-
-    return `
-      <div class="chat-media-card">
-        <div class="chat-media-header">
-          <span class="chat-media-badge">${typeLabel}</span>
-          <span class="chat-media-filename" title="${escapeHtml(cleanPath)}">${escapeHtml(fileName)}</span>
-          <button class="chat-media-btn-reveal" onclick="revealMediaFile('${cleanArg}')" title="Show in File Explorer">📂 Open Folder</button>
-        </div>
-        <div class="chat-media-content">
-          ${mediaElem}
-        </div>
-      </div>
-    `;
+    return createMediaCardHtml(type, filePath);
   });
 }
 
@@ -304,8 +312,25 @@ function renderToolHtml(toolInfo) {
     `;
   }
 
+  const mediaPath = res.output_path || res.path || "";
+
   if (toolName === "take_screenshot") {
+    if (mediaPath && res.success !== false) {
+      return createMediaCardHtml("image", mediaPath, res.summary || "Captured screenshot");
+    }
     return `<div class="tool-badge">📸 Screenshot: ${escapeHtml(res.path || 'Saved to screenshots folder')}</div>`;
+  }
+
+  if (toolName === "generate_ai_image" || toolName === "alter_ai_image" || toolName === "generate_image" || toolName === "create_image") {
+    if (mediaPath && res.success !== false) {
+      return createMediaCardHtml("image", mediaPath, res.summary || "Generated AI Image");
+    }
+  }
+
+  if (toolName === "generate_ai_video" || toolName === "generate_video") {
+    if (mediaPath && res.success !== false) {
+      return createMediaCardHtml("video", mediaPath, res.summary || "Generated AI Video");
+    }
   }
 
   if (toolName === "set_volume") {
@@ -325,12 +350,18 @@ function renderToolHtml(toolInfo) {
   }
 
   if (toolName === "edit_image" || toolName === "image_edit" || toolName === "resize_image" || toolName === "crop_image" || toolName === "filter_image") {
+    if (mediaPath && res.success !== false) {
+      return createMediaCardHtml("image", mediaPath, res.summary || "Image edited successfully");
+    }
     const isSuccess = res.success !== false;
     const actionDesc = res.summary || (isSuccess ? "Image edited successfully" : ("Error: " + (res.error || "Failed")));
     return `<div class="tool-badge">🖼️ ${escapeHtml(actionDesc)}</div>`;
   }
 
   if (toolName === "edit_video" || toolName === "video_edit" || toolName === "trim_video" || toolName === "extract_audio" || toolName === "mute_video") {
+    if (mediaPath && res.success !== false && (toolName === "edit_video" || toolName === "video_edit" || toolName === "trim_video")) {
+      return createMediaCardHtml("video", mediaPath, res.summary || "Video edited successfully");
+    }
     const isSuccess = res.success !== false;
     const actionDesc = res.summary || (isSuccess ? "Video edited successfully" : ("Error: " + (res.error || "Failed")));
     return `<div class="tool-badge">🎬 ${escapeHtml(actionDesc)}</div>`;
@@ -1029,7 +1060,11 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
       finalHtml += `<div class="model-indicator-badge">${escapeHtml(badgeLabel)}</div>`;
     }
     if (toolInfo) {
-      finalHtml += renderToolHtml(toolInfo);
+      const toolOutPath = (toolInfo.result && (toolInfo.result.output_path || toolInfo.result.path)) || "";
+      const textHasPreview = toolOutPath && fullResponse && fullResponse.includes(toolOutPath);
+      if (!textHasPreview) {
+        finalHtml += renderToolHtml(toolInfo);
+      }
     }
     const extracted = extractSuggestions(fullResponse);
     finalHtml += renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText)));
@@ -1182,9 +1217,11 @@ function showVoiceOrb(statusText = "Ready for command...") {
   const toggleBtn = document.getElementById("btn-toggle-orb");
   if (toggleBtn) toggleBtn.classList.add("active");
 
-  // Keep window visible on top across other applications
+  // Keep window visible on top across other applications asynchronously
   if (window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
-    window.pywebview.api.set_window_on_top(true);
+    setTimeout(() => {
+      window.pywebview.api.set_window_on_top(true).catch(() => {});
+    }, 0);
   }
 }
 
@@ -1198,7 +1235,9 @@ function hideVoiceOrb() {
 
   // Restore normal window layering if not explicitly pinned
   if (!isAlwaysOnTopPinned && window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
-    window.pywebview.api.set_window_on_top(false);
+    setTimeout(() => {
+      window.pywebview.api.set_window_on_top(false).catch(() => {});
+    }, 0);
   }
 
   // Restore normal window if in mini mode
@@ -1413,7 +1452,11 @@ function setupEventListeners() {
       voiceConversationMode = !voiceConversationMode;
       updateVoiceModeUI();
       if (voiceConversationMode && !isNativeRecording && !isStreaming) {
-        toggleRecording();
+        setTimeout(() => {
+          if (voiceConversationMode && !isNativeRecording && !isStreaming) {
+            toggleRecording();
+          }
+        }, 50);
       }
     });
   }

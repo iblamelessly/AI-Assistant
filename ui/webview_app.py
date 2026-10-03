@@ -379,7 +379,11 @@ class AssistantApi:
     def get_media_data_url(self, file_path):
         """Reads a local media file and returns a base64 data URL for webview rendering."""
         try:
-            p = Path(file_path).expanduser().resolve()
+            if not file_path:
+                return None
+            clean_str = str(file_path).strip().strip("'\"")
+            norm_str = os.path.normpath(clean_str)
+            p = Path(norm_str).expanduser().resolve()
             if not p.exists():
                 return None
             mime, _ = mimetypes.guess_type(str(p))
