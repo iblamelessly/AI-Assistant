@@ -923,7 +923,9 @@ function playSpeech(audioB64, fallbackText, onCompleteCallback) {
 
   const voiceBtn = document.getElementById("btn-toggle-voice");
   const orbLabel = document.getElementById("orb-status-text");
+  const robotOrb = document.getElementById("jarvis-voice-orb");
   if (voiceBtn) voiceBtn.classList.add("speaking");
+  if (robotOrb) robotOrb.classList.add("speaking");
   if (orbLabel) orbLabel.textContent = "🎙️ Speaking in English...";
 
   let finished = false;
@@ -931,7 +933,8 @@ function playSpeech(audioB64, fallbackText, onCompleteCallback) {
     if (!finished) {
       finished = true;
       if (voiceBtn) voiceBtn.classList.remove("speaking");
-      if (orbLabel) orbLabel.textContent = "Ready for command...";
+      if (robotOrb) robotOrb.classList.remove("speaking");
+      if (orbLabel) orbLabel.textContent = "Tap robot to talk";
       if (typeof onCompleteCallback === "function") {
         onCompleteCallback();
       }
@@ -1206,7 +1209,7 @@ function sendMessage() {
 let isAlwaysOnTopPinned = false;
 let isMiniModeActive = false;
 
-function showVoiceOrb(statusText = "Ready for command...") {
+function showVoiceOrb(statusText = "Tap robot to talk") {
   const orb = document.getElementById("jarvis-voice-orb");
   const label = document.getElementById("orb-status-text");
   if (!orb) return;
@@ -1228,7 +1231,7 @@ function showVoiceOrb(statusText = "Ready for command...") {
 function hideVoiceOrb() {
   const orb = document.getElementById("jarvis-voice-orb");
   if (!orb) return;
-  orb.classList.remove("visible", "listening");
+  orb.classList.remove("visible", "listening", "speaking");
   orb.classList.add("hidden");
   const toggleBtn = document.getElementById("btn-toggle-orb");
   if (toggleBtn) toggleBtn.classList.remove("active");
@@ -1257,7 +1260,7 @@ function toggleMiniMode(forceState) {
     isMiniModeActive = isMini;
     if (isMini) {
       document.body.classList.add("mini-mode");
-      showVoiceOrb("Mini JARVIS ready...");
+      showVoiceOrb("Mini Robot ready...");
     } else {
       document.body.classList.remove("mini-mode");
     }
@@ -1271,6 +1274,7 @@ function setOrbListening(active) {
   const label = document.getElementById("orb-status-text");
   if (!orb) return;
   if (active) {
+    orb.classList.remove("speaking");
     orb.classList.add("listening");
     if (label) label.textContent = "🎙️ Listening to you...";
   } else {
@@ -1283,6 +1287,16 @@ function setOrbListening(active) {
 let isNativeRecording = false;
 let recordingAutoStopTimer = null;
 let transcriptionSafetyTimer = null;
+
+// Asynchronous callback pushed when background recording thread finishes initialization
+window.onVoiceRecordingStarted = function(status) {
+  if (status === "error") {
+    console.warn("Hardware microphone recording could not be started.");
+    stopRecordingUI();
+    const label = document.getElementById("orb-status-text");
+    if (label) label.textContent = "Mic error. Check audio device.";
+  }
+};
 
 // Asynchronous callback pushed from Python background worker thread
 window.onVoiceTranscribed = function(transcribedText) {
@@ -1305,7 +1319,7 @@ window.onVoiceTranscribed = function(transcribedText) {
     sendMessage();
   } else {
     const label = document.getElementById("orb-status-text");
-    if (label) label.textContent = "Didn't catch that. Tap mic to speak.";
+    if (label) label.textContent = "Didn't catch that. Tap robot to speak.";
   }
 };
 
@@ -1357,7 +1371,7 @@ function toggleRecording() {
       if (chatInput && chatInput.placeholder.includes("Transcribing")) {
         chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
         const label = document.getElementById("orb-status-text");
-        if (label) label.textContent = "Ready for command...";
+        if (label) label.textContent = "Tap robot to talk";
       }
     }, 7000);
 
@@ -1369,7 +1383,7 @@ function toggleRecording() {
             chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
           }
           const label = document.getElementById("orb-status-text");
-          if (label) label.textContent = "Ready for command...";
+          if (label) label.textContent = "Tap robot to talk";
         }
       }).catch(err => {
         console.error("Stop recording API error:", err);
@@ -1621,7 +1635,7 @@ function setupEventListeners() {
         hideVoiceOrb();
         orbToggleBtn.classList.remove("active");
       } else {
-        showVoiceOrb("Ready for command... Click orb to speak.");
+        showVoiceOrb("Tap robot to talk");
         orbToggleBtn.classList.add("active");
       }
     });
@@ -1637,7 +1651,7 @@ function setupEventListeners() {
         hideVoiceOrb();
         if (toggleBtn) toggleBtn.classList.remove("active");
       } else {
-        showVoiceOrb("Ready for command... Click orb to speak.");
+        showVoiceOrb("Tap robot to talk");
         if (toggleBtn) toggleBtn.classList.add("active");
       }
     }

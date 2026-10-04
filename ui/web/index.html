@@ -88,14 +88,8 @@
         </div>
 
         <div class="header-actions">
-          <button class="icon-btn" id="btn-toggle-voice-mode" title="Toggle Siri / JARVIS Voice Mode (Converse hands-free without text walls)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-          </button>
+          <!-- Voice Mode button removed — voice activation is now via the floating robot orb -->
+
           <button class="icon-btn active" id="btn-toggle-voice" title="Jarvis Voice: ON">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
@@ -579,26 +573,49 @@
     </div>
   </div>
 
-  <!-- FLOATING MINI JARVIS VOICE ORB WIDGET -->
-  <div class="jarvis-voice-orb hidden" id="jarvis-voice-orb" title="JARVIS Listening Assistant">
-    <div class="orb-ring orb-ring-1"></div>
-    <div class="orb-ring orb-ring-2"></div>
-    <div class="orb-ring orb-ring-3"></div>
-    <div class="orb-core" id="orb-core" title="Click to speak (drag to reposition)">
-      <div class="orb-logo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-      </div>
-      <div class="orb-pulse-dot"></div>
+  <!-- FLOATING MINI ROBOT JARVIS VOICE WIDGET -->
+  <div class="jarvis-robot-orb hidden" id="jarvis-voice-orb" title="JARVIS Mini Robot">
+    <!-- Robot Antenna -->
+    <div class="robot-antenna">
+      <div class="robot-antenna-tip"></div>
+      <div class="robot-antenna-stem"></div>
     </div>
-    <div class="orb-label" id="orb-status-text">Ready for command...</div>
+
+    <!-- Robot Head (main interactive unit) -->
+    <div class="robot-head" id="orb-core" title="Click robot to speak / listen (drag to reposition)">
+      <!-- Eyes visor -->
+      <div class="robot-visor">
+        <div class="robot-eye robot-eye-left">
+          <div class="robot-pupil"></div>
+        </div>
+        <div class="robot-eye robot-eye-right">
+          <div class="robot-pupil"></div>
+        </div>
+      </div>
+      <!-- Mouth / Voice wave bar indicator -->
+      <div class="robot-mouth">
+        <span class="mouth-bar bar-1"></span>
+        <span class="mouth-bar bar-2"></span>
+        <span class="mouth-bar bar-3"></span>
+        <span class="mouth-bar bar-4"></span>
+      </div>
+      <!-- Ear bolts / audio glow sensors -->
+      <div class="robot-ear robot-ear-left"></div>
+      <div class="robot-ear robot-ear-right"></div>
+    </div>
+
+    <!-- Status label -->
+    <div class="orb-label" id="orb-status-text">Tap robot to talk</div>
+
+    <!-- Subtitle card for voice conversation responses -->
     <div class="orb-subtitle-card hidden" id="orb-subtitle-card">
       <div class="orb-subtitle-header">
         <span class="orb-subtitle-badge">⚡ JARVIS</span>
       </div>
       <div class="orb-subtitle-text" id="orb-subtitle-text"></div>
     </div>
+
+    <!-- Control buttons -->
     <button class="orb-control-btn orb-mini-btn" id="orb-mini-btn" title="Toggle Compact Mode">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="4 14 10 14 10 20"></polyline>

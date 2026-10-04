@@ -283,15 +283,32 @@ class AssistantApi:
         return self.engine.gemini_client.test_connection()
 
     def start_voice_recording(self):
-        """Starts hardware microphone recording in background without blocking the UI."""
-        if self.mic_engine:
+        """Starts hardware microphone recording in a background thread.
+        Never blocks the GUI/WebView2 thread — sd.InputStream() constructor
+        can take 1-3 seconds on some Windows audio drivers.
+        Pushes result to window.onVoiceRecordingStarted(status) callback.
+        """
+        if not self.mic_engine:
+            return {"status": "error", "message": "Microphone engine not available"}
+
+        def _start_worker():
             try:
                 ok = self.mic_engine.start_recording()
-                return {"status": "recording" if ok else "error"}
+                status = "recording" if ok else "error"
             except Exception as e:
                 print(f"[AssistantApi] start_voice_recording error: {e}")
-                return {"status": "error", "message": str(e)}
-        return {"status": "error", "message": "Microphone engine not available"}
+                status = "error"
+            if self._window:
+                try:
+                    self._window.evaluate_js(
+                        f"if (window.onVoiceRecordingStarted) {{ window.onVoiceRecordingStarted('{status}'); }}"
+                    )
+                except Exception:
+                    pass
+
+        worker = threading.Thread(target=_start_worker, daemon=True)
+        worker.start()
+        return {"status": "starting"}
 
     def stop_voice_recording(self):
         """
