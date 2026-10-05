@@ -284,16 +284,42 @@ class AssistantApi:
 
     def start_voice_recording(self):
         """Starts hardware microphone recording in a background thread.
-        Never blocks the GUI/WebView2 thread — sd.InputStream() constructor
-        can take 1-3 seconds on some Windows audio drivers.
-        Pushes result to window.onVoiceRecordingStarted(status) callback.
+        Uses dynamic Voice Activity Detection (VAD) to auto-detect silence
+        and automatically transcribe when the user finishes speaking.
+        Never blocks the GUI/WebView2 thread.
         """
         if not self.mic_engine:
             return {"status": "error", "message": "Microphone engine not available"}
 
+        groq_key = self.config_mgr.get("groq_api_key", "")
+
+        def _on_silence(wav_bytes):
+            """Triggered automatically when the user pauses/stops speaking."""
+            if not wav_bytes or len(wav_bytes) < 1000:
+                if self._window:
+                    try:
+                        self._window.evaluate_js("if (window.onVoiceTranscribed) { window.onVoiceTranscribed(''); }")
+                    except Exception:
+                        pass
+                return
+
+            try:
+                text = self.mic_engine.transcribe(wav_bytes, groq_api_key=groq_key)
+                clean_text = text.strip() if isinstance(text, str) else ""
+                if self._window:
+                    js_code = f"if (window.onVoiceTranscribed) {{ window.onVoiceTranscribed({json.dumps(clean_text)}); }}"
+                    self._window.evaluate_js(js_code)
+            except Exception as ex:
+                print(f"[AssistantApi] Auto-silence transcription error: {ex}")
+                if self._window:
+                    try:
+                        self._window.evaluate_js("if (window.onVoiceTranscribed) { window.onVoiceTranscribed(''); }")
+                    except Exception:
+                        pass
+
         def _start_worker():
             try:
-                ok = self.mic_engine.start_recording()
+                ok = self.mic_engine.start_recording(on_silence=_on_silence, auto_stop=True)
                 status = "recording" if ok else "error"
             except Exception as e:
                 print(f"[AssistantApi] start_voice_recording error: {e}")

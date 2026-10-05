@@ -90,12 +90,32 @@ class MicrophoneEngine:
         self._frames = []
         self._stream = None
         self._lock = threading.Lock()
+        self._on_silence_callback = None
+        self._speech_detected = False
+        self._last_speech_time = 0.0
+        self._start_time = 0.0
+        self._ambient_level = 0.02
+        self._ambient_samples = []
+        self._auto_stopped = False
 
     def is_available(self) -> bool:
         return AUDIO_SUPPORTED
 
-    def start_recording(self) -> bool:
-        """Starts recording audio from default microphone in background."""
+    def _trigger_auto_stop(self):
+        """Dispatched when silence is detected after user speech."""
+        with self._lock:
+            if not self.is_recording or self._auto_stopped:
+                return
+            self._auto_stopped = True
+        wav_bytes = self.stop_recording()
+        if self._on_silence_callback:
+            try:
+                self._on_silence_callback(wav_bytes)
+            except Exception as e:
+                print(f"[MicrophoneEngine] Error in on_silence callback: {e}")
+
+    def start_recording(self, on_silence=None, auto_stop: bool = True) -> bool:
+        """Starts recording audio from default microphone with dynamic VAD silence detection."""
         if not AUDIO_SUPPORTED:
             return False
 
@@ -104,10 +124,43 @@ class MicrophoneEngine:
                 return True
             self._frames = []
             self.is_recording = True
+            self._auto_stopped = False
+            self._speech_detected = False
+            self._on_silence_callback = on_silence
+            self._start_time = time.time()
+            self._last_speech_time = self._start_time
+            self._ambient_samples = []
 
             def callback(indata, frames, time_info, status):
-                if self.is_recording:
-                    self._frames.append(indata.copy())
+                if not self.is_recording:
+                    return
+                self._frames.append(indata.copy())
+
+                if auto_stop and on_silence and not self._auto_stopped:
+                    try:
+                        rms = float(np.sqrt(np.mean(indata**2)))
+                        now = time.time()
+
+                        # First 300ms calibrate ambient level
+                        if now - self._start_time < 0.3:
+                            self._ambient_samples.append(rms)
+                            if self._ambient_samples:
+                                self._ambient_level = max(0.015, float(np.mean(self._ambient_samples)))
+                            return
+
+                        threshold = max(0.045, self._ambient_level * 1.8)
+                        if rms > threshold:
+                            self._speech_detected = True
+                            self._last_speech_time = now
+                        elif self._speech_detected:
+                            # Speech was detected and user has now paused for >= 1.1s
+                            if (now - self._last_speech_time) >= 1.1:
+                                threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
+                        elif (now - self._start_time) >= 8.0:
+                            # User never spoke after 8s timeout
+                            threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
+                    except Exception:
+                        pass
 
             try:
                 self._stream = sd.InputStream(

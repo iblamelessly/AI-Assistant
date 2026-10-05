@@ -632,8 +632,11 @@ function onAppReady() {
       toggleProviderSections(cfg.provider || "groq");
     }
 
-    // Populate sessions
+    // Populate sessions and restore active conversation history
     renderSessionList(data.sessions, data.active_session_id);
+    if (data.active_session_id) {
+      switchSession(data.active_session_id);
+    }
 
     // Update greeting with user name if known
     if (data.memory && data.memory.user && data.memory.user.name) {
@@ -726,23 +729,37 @@ function switchSession(sessionId) {
   });
 }
 
+// Cached reference to the original welcome-card element so it is never permanently deleted
+let cachedWelcomeCard = null;
+
 // Render Messages
 function renderMessages(messages) {
   const container = document.getElementById("messages-container");
-  const welcomeCard = document.getElementById("welcome-card");
+  if (!container) return;
 
+  if (!cachedWelcomeCard) {
+    cachedWelcomeCard = document.getElementById("welcome-card");
+  }
+
+  // Clear container
   container.innerHTML = "";
 
   if (!messages || messages.length === 0) {
-    container.appendChild(welcomeCard);
-    welcomeCard.style.display = "flex";
+    if (cachedWelcomeCard) {
+      container.appendChild(cachedWelcomeCard);
+      cachedWelcomeCard.style.display = "flex";
+    }
     return;
   }
 
-  welcomeCard.style.display = "none";
+  if (cachedWelcomeCard) {
+    cachedWelcomeCard.style.display = "none";
+  }
 
   messages.forEach((msg) => {
-    appendMessageBubble(msg.role, msg.content, msg.tool_info, msg.attachments);
+    if (msg && msg.content !== undefined && msg.content !== null) {
+      appendMessageBubble(msg.role || "assistant", msg.content, msg.tool_info, msg.attachments);
+    }
   });
 
   scrollToBottom();
@@ -751,7 +768,8 @@ function renderMessages(messages) {
 // Append Message Bubble
 function appendMessageBubble(role, content, toolInfo = null, attachments = null) {
   const container = document.getElementById("messages-container");
-  const welcomeCard = document.getElementById("welcome-card");
+  if (!container) return;
+  const welcomeCard = cachedWelcomeCard || document.getElementById("welcome-card");
   if (welcomeCard) welcomeCard.style.display = "none";
 
   const row = document.createElement("div");
@@ -1213,6 +1231,7 @@ function showVoiceOrb(statusText = "Tap robot to talk") {
   const orb = document.getElementById("jarvis-voice-orb");
   const label = document.getElementById("orb-status-text");
   if (!orb) return;
+  voiceConversationMode = true;
   orb.classList.remove("hidden");
   orb.classList.add("visible");
   if (label) label.textContent = statusText;
@@ -1229,6 +1248,7 @@ function showVoiceOrb(statusText = "Tap robot to talk") {
 }
 
 function hideVoiceOrb() {
+  voiceConversationMode = false;
   const orb = document.getElementById("jarvis-voice-orb");
   if (!orb) return;
   orb.classList.remove("visible", "listening", "speaking");
@@ -1319,7 +1339,16 @@ window.onVoiceTranscribed = function(transcribedText) {
     sendMessage();
   } else {
     const label = document.getElementById("orb-status-text");
-    if (label) label.textContent = "Didn't catch that. Tap robot to speak.";
+    if (label) label.textContent = "Tap robot to talk";
+    // If in hands-free voice mode and silence was received, re-arm listening after brief pause
+    if (voiceConversationMode && !isStreaming && !isNativeRecording) {
+      showOrbSubtitle("I am listening, sir...");
+      setTimeout(() => {
+        if (voiceConversationMode && !isStreaming && !isNativeRecording) {
+          toggleRecording();
+        }
+      }, 1200);
+    }
   }
 };
 
@@ -1572,6 +1601,7 @@ function setupEventListeners() {
       const orb = document.getElementById("jarvis-voice-orb");
       if (orb && orb._preventClick) return;
       if (!isNativeRecording) {
+        voiceConversationMode = true;
         setOrbListening(true);
         toggleRecording();
       } else {

@@ -19,15 +19,39 @@ class HistoryManager:
 
     def _load(self):
         with self._lock:
+            sessions = []
             if os.path.exists(self.history_file):
                 try:
                     with open(self.history_file, "r", encoding="utf-8") as f:
                         data = json.load(f)
                         if isinstance(data, dict) and "sessions" in data:
-                            return data["sessions"]
+                            sessions = data["sessions"]
                 except Exception as e:
                     print(f"[HistoryManager] Error reading history: {e}")
-            return []
+
+            # Sanitize sessions so every session has a valid string ID
+            cleaned = []
+            needs_save = False
+            for s in sessions:
+                if not isinstance(s, dict):
+                    continue
+                s_id = s.get("id")
+                if not s_id or s_id == "None" or str(s_id).strip() == "":
+                    s["id"] = str(uuid.uuid4())
+                    needs_save = True
+                if "messages" not in s or not isinstance(s["messages"], list):
+                    s["messages"] = []
+                    needs_save = True
+                cleaned.append(s)
+
+            if needs_save:
+                try:
+                    with open(self.history_file, "w", encoding="utf-8") as f:
+                        json.dump({"sessions": cleaned}, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+
+            return cleaned
 
     def _save(self):
         with self._lock:
@@ -41,8 +65,11 @@ class HistoryManager:
         with self._lock:
             result = []
             for s in reversed(self.sessions):
+                s_id = s.get("id")
+                if not s_id:
+                    continue
                 result.append({
-                    "id": s["id"],
+                    "id": str(s_id),
                     "title": s.get("title", "New Conversation"),
                     "created_at": s.get("created_at", time.time()),
                     "message_count": len(s.get("messages", []))
@@ -50,9 +77,12 @@ class HistoryManager:
             return result
 
     def get_session(self, session_id):
+        if not session_id:
+            return None
+        target = str(session_id).strip()
         with self._lock:
             for s in self.sessions:
-                if s["id"] == session_id:
+                if str(s.get("id", "")).strip() == target:
                     return s
         return None
 
@@ -71,14 +101,17 @@ class HistoryManager:
     def add_message(self, session_id, role, content, tool_info=None, attachments=None):
         with self._lock:
             session = None
-            for s in self.sessions:
-                if s["id"] == session_id:
-                    session = s
-                    break
+            if session_id:
+                target = str(session_id).strip()
+                for s in self.sessions:
+                    if str(s.get("id", "")).strip() == target:
+                        session = s
+                        break
 
             if not session:
+                target_id = str(session_id).strip() if session_id else str(uuid.uuid4())
                 session = {
-                    "id": session_id,
+                    "id": target_id,
                     "title": "New Conversation",
                     "created_at": time.time(),
                     "messages": []
