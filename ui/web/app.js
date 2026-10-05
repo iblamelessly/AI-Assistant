@@ -1238,13 +1238,6 @@ function showVoiceOrb(statusText = "Tap robot to talk") {
 
   const toggleBtn = document.getElementById("btn-toggle-orb");
   if (toggleBtn) toggleBtn.classList.add("active");
-
-  // Keep window visible on top across other applications asynchronously
-  if (window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
-    setTimeout(() => {
-      window.pywebview.api.set_window_on_top(true).catch(() => {});
-    }, 0);
-  }
 }
 
 function hideVoiceOrb() {
@@ -1255,13 +1248,6 @@ function hideVoiceOrb() {
   orb.classList.add("hidden");
   const toggleBtn = document.getElementById("btn-toggle-orb");
   if (toggleBtn) toggleBtn.classList.remove("active");
-
-  // Restore normal window layering if not explicitly pinned
-  if (!isAlwaysOnTopPinned && window.pywebview && window.pywebview.api && window.pywebview.api.set_window_on_top) {
-    setTimeout(() => {
-      window.pywebview.api.set_window_on_top(false).catch(() => {});
-    }, 0);
-  }
 
   // Restore normal window if in mini mode
   if (isMiniModeActive) {

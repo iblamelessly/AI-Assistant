@@ -188,53 +188,55 @@ class AssistantApi:
         return usage_tracker.get_stats()
 
     def set_window_on_top(self, stay_on_top: bool):
-        """Controls whether the JARVIS desktop window stays on top of all other apps."""
-        if self._window:
-            try:
-                self._window.on_top = bool(stay_on_top)
+        """Controls whether the JARVIS desktop window stays on top of all other apps via safe Win32 API."""
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.FindWindowW(None, "JARVIS - Autonomous AI Assistant")
+            if not hwnd:
+                hwnd = ctypes.windll.user32.GetForegroundWindow()
+            if hwnd:
+                HWND_TOPMOST = -1
+                HWND_NOTOPMOST = -2
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                SWP_NOACTIVATE = 0x0010
+                flag = HWND_TOPMOST if stay_on_top else HWND_NOTOPMOST
+                ctypes.windll.user32.SetWindowPos(hwnd, flag, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
                 return True
-            except Exception as e:
-                print(f"[AssistantApi] set_window_on_top error: {e}")
+        except Exception as e:
+            print(f"[AssistantApi] set_window_on_top error: {e}")
         return False
 
     def toggle_mini_mode(self, enabled=None):
-        """Switches between full window mode and compact floating mini voice orb mode."""
-        if not self._window:
-            return False
+        """Switches between full window mode and compact floating mini voice orb mode via native Win32."""
         try:
+            import ctypes
+            hwnd = ctypes.windll.user32.FindWindowW(None, "JARVIS - Autonomous AI Assistant")
+            if not hwnd:
+                hwnd = ctypes.windll.user32.GetForegroundWindow()
+
             if enabled is None:
                 enabled = not getattr(self, "_is_mini", False)
 
             if enabled:
-                if not getattr(self, "_is_mini", False):
-                    self._prev_width = self._window.width or 1140
-                    self._prev_height = self._window.height or 780
-                    self._prev_x = self._window.x
-                    self._prev_y = self._window.y
                 self._is_mini = True
-                self._window.on_top = True
-                self._window.resize(320, 180)
-                try:
-                    import ctypes
+                if hwnd:
                     user32 = ctypes.windll.user32
                     screen_w = user32.GetSystemMetrics(0)
                     screen_h = user32.GetSystemMetrics(1)
                     target_x = max(0, screen_w - 340)
                     target_y = max(0, screen_h - 240)
-                    self._window.move(target_x, target_y)
-                except Exception:
-                    pass
+                    HWND_TOPMOST = -1
+                    SWP_NOACTIVATE = 0x0010
+                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, 320, 180, SWP_NOACTIVATE)
                 return True
             else:
                 self._is_mini = False
-                prev_w = getattr(self, "_prev_width", 1140)
-                prev_h = getattr(self, "_prev_height", 780)
-                self._window.resize(prev_w, prev_h)
-                if getattr(self, "_prev_x", None) is not None and getattr(self, "_prev_y", None) is not None:
-                    try:
-                        self._window.move(self._prev_x, self._prev_y)
-                    except Exception:
-                        pass
+                if hwnd:
+                    user32 = ctypes.windll.user32
+                    HWND_NOTOPMOST = -2
+                    SWP_NOACTIVATE = 0x0010
+                    user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 100, 100, 1140, 780, SWP_NOACTIVATE)
                 return False
         except Exception as e:
             print(f"[AssistantApi] toggle_mini_mode error: {e}")
