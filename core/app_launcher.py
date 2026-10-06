@@ -104,7 +104,9 @@ class AppLauncher:
         "calculator": ["Calculator"],
         "paint": ["Paint"],
         "mspaint": ["Paint"],
+        "file manager": ["File Explorer"],
         "files": ["File Explorer"],
+        "my files": ["File Explorer"],
         "explorer": ["File Explorer"],
         "file explorer": ["File Explorer"],
         "task manager": ["Task Manager"],
@@ -114,6 +116,18 @@ class AppLauncher:
         "cmd": ["Command Prompt"],
         "command prompt": ["Command Prompt"],
         "settings": ["Windows Settings"],
+        "windows settings": ["Windows Settings"],
+        "sound settings": ["Sound Settings"],
+        "audio settings": ["Sound Settings"],
+        "bluetooth settings": ["Bluetooth Settings"],
+        "bluetooth": ["Bluetooth Settings"],
+        "wifi settings": ["Wi-Fi Settings"],
+        "wifi": ["Wi-Fi Settings"],
+        "network settings": ["Network Settings"],
+        "display settings": ["Display Settings"],
+        "downloads": ["Downloads"],
+        "documents": ["Documents"],
+        "desktop": ["Desktop"],
         "control panel": ["Control Panel"],
         "word": ["Word"],
         "excel": ["Excel"],
@@ -128,6 +142,7 @@ class AppLauncher:
         self._last_scan_time = 0
         self.pending_app_selection = None
         self.pending_web_suggestion = None
+        self.last_youtube_query = None
 
     def get_installed_apps(self, force_refresh: bool = False) -> dict:
         """Returns cached installed applications, refreshing if older than 5 minutes."""
@@ -198,7 +213,10 @@ class AppLauncher:
             "calculator": {"name": "Calculator", "path": "calc.exe", "type": "cmd"},
             "calc": {"name": "Calculator", "path": "calc.exe", "type": "cmd"},
             "file explorer": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
+            "file manager": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
             "explorer": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
+            "files": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
+            "my files": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
             "task manager": {"name": "Task Manager", "path": "taskmgr.exe", "type": "cmd"},
             "taskmgr": {"name": "Task Manager", "path": "taskmgr.exe", "type": "cmd"},
             "windows settings": {"name": "Windows Settings", "path": "start ms-settings:", "type": "uri"},
@@ -208,6 +226,15 @@ class AppLauncher:
             "sound settings": {"name": "Sound Settings", "path": "start ms-settings:sound", "type": "uri"},
             "audio settings": {"name": "Sound Settings", "path": "start ms-settings:sound", "type": "uri"},
             "volume settings": {"name": "Sound Settings", "path": "start ms-settings:sound", "type": "uri"},
+            "bluetooth settings": {"name": "Bluetooth Settings", "path": "start ms-settings:bluetooth", "type": "uri"},
+            "bluetooth": {"name": "Bluetooth Settings", "path": "start ms-settings:bluetooth", "type": "uri"},
+            "wifi settings": {"name": "Wi-Fi Settings", "path": "start ms-settings:network-wifi", "type": "uri"},
+            "wifi": {"name": "Wi-Fi Settings", "path": "start ms-settings:network-wifi", "type": "uri"},
+            "network settings": {"name": "Network Settings", "path": "start ms-settings:network", "type": "uri"},
+            "display settings": {"name": "Display Settings", "path": "start ms-settings:display", "type": "uri"},
+            "downloads": {"name": "Downloads", "path": str(Path.home() / "Downloads"), "type": "dir"},
+            "documents": {"name": "Documents", "path": str(Path.home() / "Documents"), "type": "dir"},
+            "desktop": {"name": "Desktop", "path": str(Path.home() / "Desktop"), "type": "dir"},
             "paint": {"name": "Paint", "path": "mspaint.exe", "type": "cmd"},
             "mspaint": {"name": "Paint", "path": "mspaint.exe", "type": "cmd"},
             "snipping tool": {"name": "Snipping Tool", "path": "snippingtool.exe", "type": "cmd"},
@@ -343,6 +370,14 @@ class AppLauncher:
                     "summary": f"Launched {app_name}."
                 }
 
+            if app_type == "dir":
+                os.startfile(path)
+                return {
+                    "success": True,
+                    "app": app_name,
+                    "summary": f"Opened {app_name} folder in File Explorer."
+                }
+
             if app_type in ["lnk", "exe"]:
                 if os.path.exists(path):
                     os.startfile(path)
@@ -408,6 +443,8 @@ class AppLauncher:
                 "action": "web_search"
             }
         search_url = url_template.replace("{query}", quote_plus(query))
+        if p == "youtube" and query:
+            self.last_youtube_query = query.strip()
         try:
             webbrowser.open(search_url)
             platform_title = p.replace("_", " ").title()
@@ -425,6 +462,54 @@ class AppLauncher:
                 "error": str(e),
                 "summary": f"Failed to open search in {platform}: {e}"
             }
+
+    def get_top_youtube_video(self, query: str = None) -> str | None:
+        """Fetches the URL of the first video matching query on YouTube via fast HTML scraping."""
+        try:
+            import requests
+            from urllib.parse import quote_plus
+            target_q = (query or getattr(self, "last_youtube_query", None) or "").strip()
+            if not target_q:
+                return None
+            search_url = f"https://www.youtube.com/results?search_query={quote_plus(target_q)}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            r = requests.get(search_url, headers=headers, timeout=5)
+            if r.status_code == 200:
+                vids = []
+                for vid in re.findall(r'/watch\?v=([a-zA-Z0-9_-]{11})', r.text):
+                    if vid not in vids:
+                        vids.append(vid)
+                if vids:
+                    return f"https://www.youtube.com/watch?v={vids[0]}"
+        except Exception as e:
+            print(f"[AppLauncher] Error extracting top YouTube video: {e}")
+        return None
+
+    def open_top_youtube_video(self, query: str = None) -> dict:
+        """Opens the first video matching query (or the last searched YouTube query) directly in browser."""
+        target_q = (query or getattr(self, "last_youtube_query", None) or "").strip()
+        if not target_q:
+            return {
+                "success": False,
+                "error": "No YouTube search query available",
+                "summary": "Please tell me what video or topic you would like me to open on YouTube, sir."
+            }
+        top_url = self.get_top_youtube_video(target_q)
+        if top_url:
+            self.last_youtube_query = target_q
+            try:
+                webbrowser.open(top_url)
+                return {
+                    "success": True,
+                    "url": top_url,
+                    "query": target_q,
+                    "action": "open_url",
+                    "summary": f"Opening the first YouTube video for **\"{target_q}\"** in your browser."
+                }
+            except Exception as e:
+                return {"success": False, "error": str(e), "summary": f"Failed to open video: {e}"}
+        else:
+            return self.resolve_and_search("youtube", target_q)
 
     def resolve_and_launch(self, raw_query: str) -> dict:
         """

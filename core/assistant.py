@@ -561,6 +561,32 @@ class AssistantEngine:
             res = AssistantTools.get_system_stats()
             return {"tool": "get_system_stats", "result": res}
 
+        # Open first YouTube link / video from search
+        if re.search(r"\b(?:open|play|click|launch)\s+(?:the\s+)?(?:first|top)\s+(?:youtube\s+)?(?:link|video|result|song)\b", msg, re.IGNORECASE) or msg in ["open first link", "open first youtube link", "play first video", "play first link", "open top link", "open first result"]:
+            res = app_launcher.open_top_youtube_video()
+            return {"tool": "open_top_youtube_video", "param": getattr(app_launcher, "last_youtube_query", ""), "result": res}
+
+        # Direct YouTube play intent (e.g. "play interstellar theme on youtube", "play lofi beats on youtube")
+        play_match = re.search(r"^(?:please\s+)?(?:play)\s+(.+?)(?:\s+on\s+youtube|\s+in\s+youtube)?$", msg, re.IGNORECASE)
+        if play_match and not any(w in msg for w in ["game", "sound", "audio", "video file"]):
+            song_topic = play_match.group(1).strip()
+            if "youtube" in msg or (song_topic and len(song_topic) > 2 and song_topic not in ["it", "this", "that"]):
+                res = app_launcher.open_top_youtube_video(song_topic)
+                return {"tool": "open_top_youtube_video", "param": song_topic, "result": res}
+
+        # Open YouTube homepage
+        if re.search(r"^(?:please\s+)?(?:open|launch|go\s+to)\s+(?:the\s+)?(?:youtube|you\s*tube|yt)$", msg, re.IGNORECASE):
+            res = app_launcher.resolve_and_search("youtube", "")
+            return {
+                "tool": "web_search",
+                "param": "youtube",
+                "result": {
+                    "success": True,
+                    "action": "open_url",
+                    "summary": "Opened YouTube in your browser, sir."
+                }
+            }
+
         # Platform-specific deep search (YouTube, Google, Reddit, GitHub, Amazon, Spotify, etc.)
         # Patterns: "search youtube for lo-fi music", "youtube search python tutorials", "play on spotify chill beats"
         search_match = re.search(

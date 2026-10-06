@@ -463,6 +463,12 @@ class AssistantTools:
             return {"success": False, "error": str(e), "summary": f"Failed to search web: {e}"}
 
     @staticmethod
+    def open_top_youtube_video(query: str = None) -> dict:
+        """Opens the first video matching query (or last searched YouTube query) directly in browser."""
+        from .app_launcher import app_launcher
+        return app_launcher.open_top_youtube_video(query)
+
+    @staticmethod
     def open_url(url: str) -> dict:
         """Open a specific URL in the default browser."""
         try:
@@ -814,6 +820,8 @@ class AssistantTools:
             return cls.open_application(arg0)
         elif t in ["open_web_search", "web_search", "search"]:
             return cls.open_web_search(arg0)
+        elif t in ["open_top_youtube_video", "play_youtube", "first_youtube_link", "youtube_top_video"]:
+            return cls.open_top_youtube_video(arg0)
         elif t in ["open_url", "browse"]:
             return cls.open_url(arg0)
         else:
