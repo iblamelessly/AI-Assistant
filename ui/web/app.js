@@ -1254,8 +1254,17 @@ function hideVoiceOrb() {
 }
 
 function toggleMiniMode(forceState) {
-  if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.toggle_mini_mode) return;
   const targetState = forceState !== undefined ? forceState : !isMiniModeActive;
+  if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.toggle_mini_mode) {
+    isMiniModeActive = targetState;
+    if (isMiniModeActive) {
+      document.body.classList.add("mini-mode");
+      showVoiceOrb("Mini Robot ready...");
+    } else {
+      document.body.classList.remove("mini-mode");
+    }
+    return;
+  }
   window.pywebview.api.toggle_mini_mode(targetState).then((isMini) => {
     isMiniModeActive = isMini;
     if (isMini) {
@@ -1600,6 +1609,7 @@ function setupEventListeners() {
 
     orb.addEventListener("mousedown", (e) => {
       if (e.target.closest("#orb-dismiss-btn") || e.target.closest("#orb-mini-btn")) return;
+      if (isMiniModeActive) return;
       isDragging = true;
       hasMoved = false;
       startX = e.clientX;
@@ -1611,7 +1621,7 @@ function setupEventListeners() {
     });
 
     window.addEventListener("mousemove", (e) => {
-      if (!isDragging) return;
+      if (!isDragging || isMiniModeActive) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
@@ -1636,32 +1646,32 @@ function setupEventListeners() {
     });
   })();
 
-  // Voice Orb Toggle Button (explicit user control)
+  // Voice Orb & Always-On Mini Robot HUD Toggle Button
   const orbToggleBtn = document.getElementById("btn-toggle-orb");
   if (orbToggleBtn) {
     orbToggleBtn.addEventListener("click", () => {
-      const orb = document.getElementById("jarvis-voice-orb");
-      if (orb && orb.classList.contains("visible")) {
+      if (isMiniModeActive) {
+        toggleMiniMode(false);
         hideVoiceOrb();
         orbToggleBtn.classList.remove("active");
       } else {
-        showVoiceOrb("Tap robot to talk");
+        toggleMiniMode(true);
         orbToggleBtn.classList.add("active");
       }
     });
   }
 
-  // Keyboard shortcut: Alt+J to toggle voice orb
+  // Keyboard shortcut: Alt+J to toggle Always-On Mini Robot Desktop HUD
   document.addEventListener("keydown", (e) => {
     if (e.altKey && (e.key === "j" || e.key === "J")) {
       e.preventDefault();
-      const orb = document.getElementById("jarvis-voice-orb");
       const toggleBtn = document.getElementById("btn-toggle-orb");
-      if (orb && orb.classList.contains("visible")) {
+      if (isMiniModeActive) {
+        toggleMiniMode(false);
         hideVoiceOrb();
         if (toggleBtn) toggleBtn.classList.remove("active");
       } else {
-        showVoiceOrb("Tap robot to talk");
+        toggleMiniMode(true);
         if (toggleBtn) toggleBtn.classList.add("active");
       }
     }

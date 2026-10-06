@@ -189,13 +189,36 @@ class AssistantApi:
         from core.groq_client import usage_tracker
         return usage_tracker.get_stats()
 
+    def _get_hwnd(self):
+        """Safely retrieves the HWND of the JARVIS desktop window."""
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.FindWindowW(None, "JARVIS - Autonomous AI Assistant")
+            if hwnd:
+                return hwnd
+            found = []
+            def enum_cb(h, _):
+                length = ctypes.windll.user32.GetWindowTextLengthW(h)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    ctypes.windll.user32.GetWindowTextW(h, buff, length + 1)
+                    if "JARVIS" in buff.value:
+                        found.append(h)
+                return True
+            WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+            ctypes.windll.user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+            if found:
+                return found[0]
+            return ctypes.windll.user32.GetForegroundWindow()
+        except Exception as e:
+            print(f"[AssistantApi] _get_hwnd error: {e}")
+            return None
+
     def set_window_on_top(self, stay_on_top: bool):
         """Controls whether the JARVIS desktop window stays on top of all other apps via safe Win32 API."""
         try:
             import ctypes
-            hwnd = ctypes.windll.user32.FindWindowW(None, "JARVIS - Autonomous AI Assistant")
-            if not hwnd:
-                hwnd = ctypes.windll.user32.GetForegroundWindow()
+            hwnd = self._get_hwnd()
             if hwnd:
                 HWND_TOPMOST = -1
                 HWND_NOTOPMOST = -2
@@ -213,9 +236,7 @@ class AssistantApi:
         """Switches between full window mode and compact floating mini voice orb mode via native Win32."""
         try:
             import ctypes
-            hwnd = ctypes.windll.user32.FindWindowW(None, "JARVIS - Autonomous AI Assistant")
-            if not hwnd:
-                hwnd = ctypes.windll.user32.GetForegroundWindow()
+            hwnd = self._get_hwnd()
 
             if enabled is None:
                 enabled = not getattr(self, "_is_mini", False)
@@ -226,11 +247,13 @@ class AssistantApi:
                     user32 = ctypes.windll.user32
                     screen_w = user32.GetSystemMetrics(0)
                     screen_h = user32.GetSystemMetrics(1)
-                    target_x = max(0, screen_w - 340)
-                    target_y = max(0, screen_h - 240)
+                    target_w = 360
+                    target_h = 260
+                    target_x = max(0, screen_w - target_w - 24)
+                    target_y = max(0, screen_h - target_h - 60)
                     HWND_TOPMOST = -1
                     SWP_NOACTIVATE = 0x0010
-                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, 320, 180, SWP_NOACTIVATE)
+                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, target_w, target_h, SWP_NOACTIVATE)
                 return True
             else:
                 self._is_mini = False
