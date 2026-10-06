@@ -1054,9 +1054,13 @@ window.onStreamChunk = function(chunk) {
 };
 
 // Stream complete handler with audio speech response
-window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, isVoiceMode) {
+window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, isVoiceMode, activeSessionId) {
   isStreaming = false;
   document.getElementById("btn-send").disabled = false;
+
+  if (activeSessionId && activeSessionId !== "ephemeral" && (!currentSessionId || currentSessionId !== activeSessionId)) {
+    currentSessionId = activeSessionId;
+  }
 
   const isVoice = Boolean(isVoiceMode || voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
 
@@ -1214,8 +1218,11 @@ function sendMessage() {
   const orbLabel = document.getElementById("orb-status-text");
   if (orbLabel) orbLabel.textContent = currentStatusText;
 
+  const saveHistory = !isVoice && !isMiniModeActive;
+  const targetSessionId = saveHistory ? (currentSessionId || null) : "ephemeral";
+
   // Call Python API
-  window.pywebview.api.send_message(userText, currentSessionId, attachmentsToSend, isVoice).catch((err) => {
+  window.pywebview.api.send_message(userText, targetSessionId, attachmentsToSend, isVoice, saveHistory).catch((err) => {
     console.error("Send message error:", err);
     bubble.innerHTML = `<p style="color:var(--danger)">Error: ${err}</p>`;
     isStreaming = false;

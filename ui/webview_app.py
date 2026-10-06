@@ -63,7 +63,7 @@ class AssistantApi:
             "usage_stats": usage_tracker.get_stats()
         }
 
-    def send_message(self, user_message, session_id, attachments=None, voice_mode=False):
+    def send_message(self, user_message, session_id, attachments=None, voice_mode=False, save_history=True):
         """Asynchronously streams response tokens to the UI via evaluate_js with dynamic activity states."""
         def run_stream():
             def on_status(status_text, status_type="thinking", detail=""):
@@ -76,9 +76,10 @@ class AssistantApi:
                     js_code = f"window.onStreamChunk({json.dumps(token)});"
                     self._window.evaluate_js(js_code)
 
-            def on_complete(full_resp, tool_info, audio_b64=None, model_used=None):
+            def on_complete(full_resp, tool_info, audio_b64=None, model_used=None, sid=None):
                 if self._window:
-                    js_code = f"window.onStreamComplete({json.dumps(full_resp)}, {json.dumps(tool_info)}, {json.dumps(audio_b64)}, {json.dumps(model_used)}, {json.dumps(bool(voice_mode))});"
+                    active_sid = sid or session_id
+                    js_code = f"window.onStreamComplete({json.dumps(full_resp)}, {json.dumps(tool_info)}, {json.dumps(audio_b64)}, {json.dumps(model_used)}, {json.dumps(bool(voice_mode))}, {json.dumps(active_sid)});"
                     self._window.evaluate_js(js_code)
 
             def on_tool(tool_info):
@@ -94,7 +95,8 @@ class AssistantApi:
                 on_tool=on_tool,
                 attachments=attachments,
                 on_status=on_status,
-                voice_mode=voice_mode
+                voice_mode=voice_mode,
+                save_history=save_history
             )
 
         thread = threading.Thread(target=run_stream, daemon=True)

@@ -928,7 +928,7 @@ class AssistantEngine:
         on_chunk(err_msg)
         return err_msg
 
-    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None, on_status=None, voice_mode: bool = False):
+    def stream_chat(self, session_id: str, user_message: str, on_chunk, on_complete, on_tool=None, attachments=None, on_status=None, voice_mode: bool = False, save_history: bool = True):
         """
         Processes a chat turn with:
         1. Human confirmation check (Yes/No response evaluation)
@@ -945,6 +945,23 @@ class AssistantEngine:
                     on_status(title, state_type, detail)
                 except Exception:
                     pass
+
+        # Ensure a valid persistent session exists when saving history
+        if save_history and str(session_id).strip() not in ["ephemeral", "transient"]:
+            if not session_id or str(session_id).strip() in ["null", "undefined", "None", ""]:
+                existing = self.history_mgr.list_sessions()
+                if existing:
+                    session_id = existing[0]["id"]
+                else:
+                    new_s = self.history_mgr.create_session("New Conversation")
+                    session_id = new_s["id"]
+            else:
+                if not self.history_mgr.get_session(session_id):
+                    self.history_mgr.create_session("New Conversation", session_id=str(session_id).strip())
+
+        def record_turn(role, content, tool_info=None, atts=None):
+            if save_history and session_id and str(session_id).strip() not in ["ephemeral", "transient", "null", "undefined", "None"]:
+                self.history_mgr.add_message(session_id, role, content, tool_info=tool_info, attachments=atts)
 
         # Determine initial context-aware state based on user message
         msg_lower = (user_message or "").lower().strip()
@@ -983,23 +1000,23 @@ class AssistantEngine:
 
                     set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                     audio_b64 = self.voice_engine.generate_speech_base64(confirm_msg) if self.voice_engine.is_enabled() else None
-                    self.history_mgr.add_message(session_id, "user", user_message)
-                    self.history_mgr.add_message(session_id, "assistant", confirm_msg, tool_info=tool_info)
-                    on_complete(confirm_msg, tool_info, audio_b64)
+                    record_turn("user", user_message)
+                    record_turn("assistant", confirm_msg, tool_info=tool_info)
+                    on_complete(confirm_msg, tool_info, audio_b64, None, session_id)
                     return
                 elif eval_res.get("confirmed") is False:
                     cancel_msg = eval_res.get("message", "Operation cancelled, sir.")
                     on_chunk(cancel_msg)
                     set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                     audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
-                    self.history_mgr.add_message(session_id, "user", user_message)
-                    self.history_mgr.add_message(session_id, "assistant", cancel_msg)
-                    on_complete(cancel_msg, None, audio_b64)
+                    record_turn("user", user_message)
+                    record_turn("assistant", cancel_msg)
+                    on_complete(cancel_msg, None, audio_b64, None, session_id)
                     return
                 elif eval_res.get("clarification"):
                     clarify_msg = eval_res["clarification"]
                     on_chunk(clarify_msg)
-                    on_complete(clarify_msg, None, None)
+                    on_complete(clarify_msg, None, None, None, session_id)
                     return
 
         # 2. Check for ambiguity on deletion/modification commands
@@ -1009,9 +1026,9 @@ class AssistantEngine:
             on_chunk(ambiguity_q)
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             audio_b64 = self.voice_engine.generate_speech_base64(ambiguity_q) if self.voice_engine.is_enabled() else None
-            self.history_mgr.add_message(session_id, "user", user_message)
-            self.history_mgr.add_message(session_id, "assistant", ambiguity_q)
-            on_complete(ambiguity_q, None, audio_b64)
+            record_turn("user", user_message)
+            record_turn("assistant", ambiguity_q)
+            on_complete(ambiguity_q, None, audio_b64, None, session_id)
             return
 
         # 3. Check if user is replying to a pending file or folder selection
@@ -1026,9 +1043,9 @@ class AssistantEngine:
                         cancel_msg = "File/folder operation cancelled, sir."
                         on_chunk(cancel_msg)
                         audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
-                        self.history_mgr.add_message(session_id, "user", user_message)
-                        self.history_mgr.add_message(session_id, "assistant", cancel_msg)
-                        on_complete(cancel_msg, None, audio_b64)
+                        record_turn("user", user_message)
+                        record_turn("assistant", cancel_msg)
+                        on_complete(cancel_msg, None, audio_b64, None, session_id)
                         return
                     elif eval_res.get("status") == "selected":
                         chosen = eval_res["match"]
@@ -1045,9 +1062,9 @@ class AssistantEngine:
                             on_tool(tool_info)
                         on_chunk(resp_msg)
                         audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen['name']} for you, sir.") if self.voice_engine.is_enabled() else None
-                        self.history_mgr.add_message(session_id, "user", user_message)
-                        self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=tool_info)
-                        on_complete(resp_msg, tool_info, audio_b64)
+                        record_turn("user", user_message)
+                        record_turn("assistant", resp_msg, tool_info=tool_info)
+                        on_complete(resp_msg, tool_info, audio_b64, None, session_id)
                         return
 
         # 4. Check if user is replying to a pending app selection or web suggestion
@@ -1057,9 +1074,9 @@ class AssistantEngine:
                 cancel_msg = "App launch cancelled, sir."
                 on_chunk(cancel_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", cancel_msg)
-                on_complete(cancel_msg, None, audio_b64)
+                record_turn("user", user_message)
+                record_turn("assistant", cancel_msg)
+                on_complete(cancel_msg, None, audio_b64, None, session_id)
                 return
             elif chosen_app:
                 launch_res = app_launcher.resolve_and_launch(chosen_app)
@@ -1073,9 +1090,9 @@ class AssistantEngine:
                 resp_msg = f"🚀 Opened **{chosen_app}** for you, sir."
                 on_chunk(resp_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen_app} for you, sir.") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=tool_info)
-                on_complete(resp_msg, tool_info, audio_b64)
+                record_turn("user", user_message)
+                record_turn("assistant", resp_msg, tool_info=tool_info)
+                on_complete(resp_msg, tool_info, audio_b64, None, session_id)
                 return
 
         if app_launcher.pending_web_suggestion:
@@ -1083,16 +1100,16 @@ class AssistantEngine:
             if web_res == "CANCEL":
                 cancel_msg = "Understood, cancelled opening web browser."
                 on_chunk(cancel_msg)
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", cancel_msg)
-                on_complete(cancel_msg, None, None)
+                record_turn("user", user_message)
+                record_turn("assistant", cancel_msg)
+                on_complete(cancel_msg, None, None, None, session_id)
                 return
             elif web_res:
                 on_chunk(web_res)
                 audio_b64 = self.voice_engine.generate_speech_base64(web_res) if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", web_res)
-                on_complete(web_res, None, audio_b64)
+                record_turn("user", user_message)
+                record_turn("assistant", web_res)
+                on_complete(web_res, None, audio_b64, None, session_id)
                 return
 
         # 4. Trigger background memory extraction
@@ -1132,9 +1149,9 @@ class AssistantEngine:
                 )
                 on_chunk(doubt_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching {fast_action['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
-                on_complete(doubt_msg, None, audio_b64)
+                record_turn("user", user_message)
+                record_turn("assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64, None, session_id)
                 return
             elif fast_action.get("doubt"):
                 matches = fast_action.get("matches", [])
@@ -1147,9 +1164,9 @@ class AssistantEngine:
                 )
                 on_chunk(doubt_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {fast_action['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
-                on_complete(doubt_msg, None, audio_b64)
+                record_turn("user", user_message)
+                record_turn("assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64, None, session_id)
                 return
             elif fast_action.get("web_suggestion"):
                 name = fast_action.get("name")
@@ -1160,9 +1177,9 @@ class AssistantEngine:
                 )
                 on_chunk(ask_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message)
-                self.history_mgr.add_message(session_id, "assistant", ask_msg)
-                on_complete(ask_msg, None, audio_b64)
+                record_turn("user", user_message)
+                record_turn("assistant", ask_msg)
+                on_complete(ask_msg, None, audio_b64, None, session_id)
                 return
             elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot"]:
                 t_tool = fast_action.get("tool")
@@ -1191,10 +1208,10 @@ class AssistantEngine:
                         audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
                     except Exception as e:
                         print(f"[AssistantEngine] Voice synthesis error: {e}")
-                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
-                self.history_mgr.add_message(session_id, "assistant", resp_msg, tool_info=fast_action)
+                record_turn("user", user_message, atts=attachments)
+                record_turn("assistant", resp_msg, tool_info=fast_action)
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
-                on_complete(resp_msg, fast_action, audio_b64, model_used)
+                on_complete(resp_msg, fast_action, audio_b64, model_used, session_id)
                 return
             else:
                 tool_action_performed = fast_action
@@ -1337,10 +1354,10 @@ class AssistantEngine:
                 full_response += ask_confirm_msg
 
                 audio_b64 = self.voice_engine.synthesize_and_speak(inspection["question"], play_audio=True) if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
-                self.history_mgr.add_message(session_id, "assistant", full_response)
+                record_turn("user", user_message, atts=attachments)
+                record_turn("assistant", full_response)
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
-                on_complete(full_response, None, audio_b64, model_used)
+                on_complete(full_response, None, audio_b64, model_used, session_id)
                 return
 
             # Execute permitted action
@@ -1373,9 +1390,9 @@ class AssistantEngine:
                 )
                 on_chunk(doubt_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching. Which one would you like to open?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
-                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
-                on_complete(doubt_msg, None, audio_b64)
+                record_turn("user", user_message, atts=attachments)
+                record_turn("assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64, None, session_id)
                 return
             elif t_result.get("doubt"):
                 matches = t_result.get("matches", [])
@@ -1388,9 +1405,9 @@ class AssistantEngine:
                 )
                 on_chunk(doubt_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {t_result['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
-                self.history_mgr.add_message(session_id, "assistant", doubt_msg)
-                on_complete(doubt_msg, None, audio_b64)
+                record_turn("user", user_message, atts=attachments)
+                record_turn("assistant", doubt_msg)
+                on_complete(doubt_msg, None, audio_b64, None, session_id)
                 return
             elif t_result.get("web_suggestion"):
                 name = t_result.get("name")
@@ -1401,9 +1418,9 @@ class AssistantEngine:
                 )
                 on_chunk(ask_msg)
                 audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
-                self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
-                self.history_mgr.add_message(session_id, "assistant", ask_msg)
-                on_complete(ask_msg, None, audio_b64)
+                record_turn("user", user_message, atts=attachments)
+                record_turn("assistant", ask_msg)
+                on_complete(ask_msg, None, audio_b64, None, session_id)
                 return
 
             tool_action_performed = {
@@ -1436,8 +1453,8 @@ class AssistantEngine:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")
 
         # 10. Record history
-        self.history_mgr.add_message(session_id, "user", user_message, attachments=attachments)
-        self.history_mgr.add_message(session_id, "assistant", clean_display, tool_info=tool_action_performed)
+        record_turn("user", user_message, atts=attachments)
+        record_turn("assistant", clean_display, tool_info=tool_action_performed)
 
         model_used = getattr(self.groq_client, "last_model_used", self.model)
-        on_complete(clean_display, tool_action_performed, audio_b64, model_used)
+        on_complete(clean_display, tool_action_performed, audio_b64, model_used, session_id)
