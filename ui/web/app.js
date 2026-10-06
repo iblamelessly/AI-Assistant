@@ -1166,50 +1166,38 @@ function sendMessage() {
   pendingAttachments = [];
   renderAttachmentPreviews();
 
-  // Append user bubble
-  appendMessageBubble("user", userText, null, attachmentsToSend);
+  const isVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
+  const saveHistory = !isVoice && !isMiniModeActive;
+  const targetSessionId = saveHistory ? (currentSessionId || null) : "ephemeral";
 
-  // Determine initial real-time status state based on user input
-  if (/(create|generate|make|draw|paint|render|presentation|ppt|powerpoint|document|docx|word|pdf|slides|image|video|design|slideshow|write a script|write a code)/i.test(userText)) {
-    currentStatusText = "Creating...";
-    currentStatusType = "creating";
-    currentStatusDetail = "Designing and generating content...";
-  } else if (/(analyze|analysis|inspect|examine|check|audit|search|find|locate|scan|list|read|where|lookup|look up)/i.test(userText)) {
-    currentStatusText = "Analyzing...";
-    currentStatusType = "analyzing";
-    currentStatusDetail = "Analyzing request & scanning system...";
-  } else if (/(open|launch|start|run|powershell|terminal|kill|close|cmd|execute)/i.test(userText)) {
-    currentStatusText = "Executing...";
-    currentStatusType = "executing";
-    currentStatusDetail = "Preparing system execution...";
+  // Only append bubbles to the main chat window if saving history
+  if (saveHistory) {
+    appendMessageBubble("user", userText, null, attachmentsToSend);
+
+    const container = document.getElementById("messages-container");
+    const row = document.createElement("div");
+    row.className = "message-row assistant";
+
+    const avatar = document.createElement("div");
+    avatar.className = "message-avatar";
+    avatar.textContent = "J";
+
+    const bubble = document.createElement("div");
+    bubble.className = "message-bubble";
+    bubble.innerHTML = renderActivityCardHtml(currentStatusText, currentStatusType, currentStatusDetail);
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    container.appendChild(row);
+
+    currentAssistantBubble = bubble;
+    scrollToBottom();
   } else {
-    currentStatusText = "Thinking...";
-    currentStatusType = "thinking";
-    currentStatusDetail = "Jarvis is reasoning through your request...";
+    currentAssistantBubble = null;
   }
 
-  // Create assistant bubble with dynamic activity widget instead of blinking cursor bar
-  const container = document.getElementById("messages-container");
-  const row = document.createElement("div");
-  row.className = "message-row assistant";
-
-  const avatar = document.createElement("div");
-  avatar.className = "message-avatar";
-  avatar.textContent = "J";
-
-  const bubble = document.createElement("div");
-  bubble.className = "message-bubble";
-  bubble.innerHTML = renderActivityCardHtml(currentStatusText, currentStatusType, currentStatusDetail);
-
-  row.appendChild(avatar);
-  row.appendChild(bubble);
-  container.appendChild(row);
-
-  currentAssistantBubble = bubble;
   currentStreamBuffer = "";
-  scrollToBottom();
 
-  const isVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
   if (isVoice) {
     showVoiceOrb(currentStatusText);
     showOrbSubtitle("JARVIS is thinking...");
@@ -1218,13 +1206,12 @@ function sendMessage() {
   const orbLabel = document.getElementById("orb-status-text");
   if (orbLabel) orbLabel.textContent = currentStatusText;
 
-  const saveHistory = !isVoice && !isMiniModeActive;
-  const targetSessionId = saveHistory ? (currentSessionId || null) : "ephemeral";
-
   // Call Python API
   window.pywebview.api.send_message(userText, targetSessionId, attachmentsToSend, isVoice, saveHistory).catch((err) => {
     console.error("Send message error:", err);
-    bubble.innerHTML = `<p style="color:var(--danger)">Error: ${err}</p>`;
+    if (currentAssistantBubble) {
+      currentAssistantBubble.innerHTML = `<p style="color:var(--danger)">Error: ${err}</p>`;
+    }
     isStreaming = false;
     document.getElementById("btn-send").disabled = false;
   });
