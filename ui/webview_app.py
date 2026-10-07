@@ -192,6 +192,13 @@ class AssistantApi:
     def _get_hwnd(self):
         """Safely retrieves the HWND of the JARVIS desktop window."""
         try:
+            from webview.platforms import winforms
+            for uid, bv in winforms.BrowserView.instances.items():
+                if hasattr(bv, "Handle"):
+                    return int(bv.Handle.ToInt64())
+        except Exception:
+            pass
+        try:
             import ctypes
             hwnd = ctypes.windll.user32.FindWindowW(None, "JARVIS - Autonomous AI Assistant")
             if hwnd:
@@ -233,7 +240,9 @@ class AssistantApi:
         return False
 
     def toggle_mini_mode(self, enabled=None):
-        """Switches between full window mode and compact floating mini voice orb mode via native Win32."""
+        """Switches between full window mode and compact floating mini voice orb mode via native Win32.
+        Preserves standard window title bar, minimize, maximize, and close buttons completely.
+        """
         try:
             import ctypes
             hwnd = self._get_hwnd()
@@ -245,6 +254,7 @@ class AssistantApi:
                 self._is_mini = True
                 if hwnd:
                     user32 = ctypes.windll.user32
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE: ensures window is restored from minimized/taskbar state
                     screen_w = user32.GetSystemMetrics(0)
                     screen_h = user32.GetSystemMetrics(1)
                     target_w = 360
@@ -252,20 +262,80 @@ class AssistantApi:
                     target_x = max(0, screen_w - target_w - 24)
                     target_y = max(0, screen_h - target_h - 60)
                     HWND_TOPMOST = -1
-                    SWP_NOACTIVATE = 0x0010
-                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, target_w, target_h, SWP_NOACTIVATE)
+                    SWP_SHOWWINDOW = 0x0040
+                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, target_w, target_h, SWP_SHOWWINDOW)
+                if self._window:
+                    try:
+                        self._window.restore()
+                        self._window.on_top = True
+                    except Exception:
+                        pass
                 return True
             else:
                 self._is_mini = False
                 if hwnd:
                     user32 = ctypes.windll.user32
+                    user32.ShowWindow(hwnd, 9)
                     HWND_NOTOPMOST = -2
-                    SWP_NOACTIVATE = 0x0010
-                    user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 100, 100, 1140, 780, SWP_NOACTIVATE)
+                    SWP_SHOWWINDOW = 0x0040
+                    user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 100, 100, 1140, 780, SWP_SHOWWINDOW)
+                if self._window:
+                    try:
+                        self._window.on_top = False
+                        self._window.restore()
+                    except Exception:
+                        pass
                 return False
         except Exception as e:
             print(f"[AssistantApi] toggle_mini_mode error: {e}")
             return False
+
+    def emergency_stop(self):
+        """Immediately halts active autonomous agent loop."""
+        return self.engine.emergency_stop()
+
+    def get_startup_status(self):
+        """Checks if JARVIS is set to start on Windows boot."""
+        try:
+            from core.tray import SystemTrayManager
+            return SystemTrayManager.is_startup_enabled()
+        except ImportError:
+            return False
+
+    def set_startup_status(self, enabled: bool):
+        """Toggles start on Windows boot."""
+        try:
+            from core.tray import SystemTrayManager
+            return SystemTrayManager.set_startup_enabled(bool(enabled))
+        except ImportError:
+            return False
+
+    def restore_and_focus(self):
+        """Restores window from minimized or mini state and brings to foreground."""
+        try:
+            import win32gui
+            import win32con
+            hwnd = self._get_hwnd()
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(hwnd)
+                self.toggle_mini_mode(False)
+        except Exception as e:
+            print(f"[AssistantApi] restore_and_focus error: {e}")
+
+    def trigger_voice_toggle(self):
+        if self._window:
+            try:
+                self._window.evaluate_js("if (window.toggleRecording) { window.toggleRecording(); }")
+            except Exception:
+                pass
+
+    def trigger_settings(self):
+        if self._window:
+            try:
+                self._window.evaluate_js("if (window.switchView) { window.switchView('settings'); }")
+            except Exception:
+                pass
 
     def execute_terminal_command(self, command):
         """Allows direct execution of PowerShell / terminal commands."""
@@ -565,6 +635,56 @@ def start_desktop_app():
     )
 
     api.set_window(window)
+
+    def on_window_minimized():
+        """Triggered automatically when the window is minimized.
+        Minimize-to-mini: keeps the Floating Mini Robot visible on screen instead of disappearing!
+        """
+        def _to_mini():
+            time.sleep(0.04)
+            api.toggle_mini_mode(True)
+            if api._window:
+                try:
+                    api._window.evaluate_js("if (window.setMiniModeUI) { window.setMiniModeUI(true); }")
+                except Exception:
+                    pass
+        threading.Thread(target=_to_mini, daemon=True).start()
+
+    window.events.minimized += on_window_minimized
+
+    def _minimize_watcher():
+        import ctypes
+        user32 = ctypes.windll.user32
+        time.sleep(1.5)
+        while True:
+            time.sleep(0.2)
+            try:
+                hwnd = api._get_hwnd()
+                if hwnd and user32.IsIconic(hwnd):
+                    api.toggle_mini_mode(True)
+                    if api._window:
+                        try:
+                            api._window.evaluate_js("if (window.setMiniModeUI) { window.setMiniModeUI(true); }")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    threading.Thread(target=_minimize_watcher, daemon=True).start()
+
+    try:
+        from core.tray import SystemTrayManager
+        tray_mgr = SystemTrayManager(
+            on_show=lambda: api.restore_and_focus(),
+            on_mini=lambda: api.toggle_mini_mode(True),
+            on_voice=lambda: api.trigger_voice_toggle(),
+            on_settings=lambda: api.trigger_settings(),
+            on_exit=lambda: window.destroy()
+        )
+        tray_mgr.start()
+    except ImportError:
+        pass
+
     webview.start(debug=False)
 
 if __name__ == "__main__":

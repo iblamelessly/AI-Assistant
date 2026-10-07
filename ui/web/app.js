@@ -1118,19 +1118,32 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
     loadAsyncMediaElements(currentAssistantBubble);
   }
 
-  // Speak back response in English with hands-free callback
-  playSpeech(audioB64, fullResponse, () => {
-    if (isVoice) {
-      hideOrbSubtitle(2000);
-      if (continuousListen && (voiceConversationMode || document.body.classList.contains("voice-mode"))) {
+  // Speak back response ONLY when user interacted via voice or mini robot, keeping text chat 100% silent
+  if (isVoice && audioB64) {
+    playSpeech(audioB64, fullResponse, () => {
+      hideOrbSubtitle(2500);
+      // Continuous hands-free listening: automatically resume listening so user never needs to touch the robot!
+      if (continuousListen && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
         setTimeout(() => {
-          if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode"))) {
+          if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+            setOrbListening(true);
             toggleRecording();
           }
-        }, 400);
+        }, 350);
       }
+    });
+  } else if (isVoice) {
+    hideOrbSubtitle(2000);
+    // Continuous hands-free listening when no audio was generated
+    if (continuousListen && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+      setTimeout(() => {
+        if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+          setOrbListening(true);
+          toggleRecording();
+        }
+      }, 350);
     }
-  });
+  }
 
   currentAssistantBubble = null;
   currentStreamBuffer = "";
@@ -1253,26 +1266,32 @@ function hideVoiceOrb() {
   }
 }
 
+window.setMiniModeUI = function(isMini) {
+  isMiniModeActive = isMini;
+  const toggleBtn = document.getElementById("btn-toggle-orb");
+  if (isMini) {
+    document.body.classList.add("mini-mode");
+    voiceConversationMode = true;
+    continuousListen = true;
+    if (toggleBtn) toggleBtn.classList.add("active");
+    showVoiceOrb("Mini Robot active — listening...");
+    if (!isNativeRecording && !isStreaming) {
+      setTimeout(() => { toggleRecording(); }, 350);
+    }
+  } else {
+    document.body.classList.remove("mini-mode");
+    if (toggleBtn) toggleBtn.classList.remove("active");
+  }
+};
+
 function toggleMiniMode(forceState) {
   const targetState = forceState !== undefined ? forceState : !isMiniModeActive;
   if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.toggle_mini_mode) {
-    isMiniModeActive = targetState;
-    if (isMiniModeActive) {
-      document.body.classList.add("mini-mode");
-      showVoiceOrb("Mini Robot ready...");
-    } else {
-      document.body.classList.remove("mini-mode");
-    }
+    window.setMiniModeUI(targetState);
     return;
   }
   window.pywebview.api.toggle_mini_mode(targetState).then((isMini) => {
-    isMiniModeActive = isMini;
-    if (isMini) {
-      document.body.classList.add("mini-mode");
-      showVoiceOrb("Mini Robot ready...");
-    } else {
-      document.body.classList.remove("mini-mode");
-    }
+    window.setMiniModeUI(isMini);
   }).catch((err) => {
     console.warn("Toggle mini mode error:", err);
   });
@@ -1327,16 +1346,22 @@ window.onVoiceTranscribed = function(transcribedText) {
     if (label) label.textContent = "Processing command...";
     sendMessage();
   } else {
-    const label = document.getElementById("orb-status-text");
-    if (label) label.textContent = "Tap robot to talk";
-    // If in hands-free voice mode and silence was received, re-arm listening after brief pause
-    if (voiceConversationMode && !isStreaming && !isNativeRecording) {
-      showOrbSubtitle("I am listening, sir...");
+    // Silence or background noise filtered out — seamlessly continue listening if in hands-free live voice mode
+    const isLiveVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
+    if (isLiveVoice && continuousListen && !isStreaming) {
+      stopRecordingUI();
+      const label = document.getElementById("orb-status-text");
+      if (label) label.textContent = "🎙️ Listening to you...";
       setTimeout(() => {
-        if (voiceConversationMode && !isStreaming && !isNativeRecording) {
+        if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
           toggleRecording();
         }
-      }, 1200);
+      }, 250);
+    } else {
+      const label = document.getElementById("orb-status-text");
+      if (label) label.textContent = "Tap robot to talk";
+      hideOrbSubtitle(1500);
+      stopRecordingUI();
     }
   }
 };
@@ -1400,8 +1425,19 @@ function toggleRecording() {
           if (chatInput) {
             chatInput.placeholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
           }
-          const label = document.getElementById("orb-status-text");
-          if (label) label.textContent = "Tap robot to talk";
+          const isLiveVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
+          if (isLiveVoice && continuousListen && !isStreaming) {
+            const label = document.getElementById("orb-status-text");
+            if (label) label.textContent = "🎙️ Listening to you...";
+            setTimeout(() => {
+              if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+                toggleRecording();
+              }
+            }, 250);
+          } else {
+            const label = document.getElementById("orb-status-text");
+            if (label) label.textContent = "Tap robot to talk";
+          }
         }
       }).catch(err => {
         console.error("Stop recording API error:", err);
@@ -1661,7 +1697,23 @@ function setupEventListeners() {
     });
   }
 
-  // Keyboard shortcut: Alt+J to toggle Always-On Mini Robot Desktop HUD
+  // Emergency Stop / Cancel active autonomous task
+  window.emergencyStop = function() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.emergency_stop) {
+      window.pywebview.api.emergency_stop().then((res) => {
+        console.log("Emergency stop acknowledged:", res);
+        const label = document.getElementById("orb-status-text");
+        if (label) label.textContent = "Halted by user";
+        hideOrbSubtitle(2000);
+        stopRecordingUI();
+        isStreaming = false;
+        const sendBtn = document.getElementById("btn-send");
+        if (sendBtn) sendBtn.disabled = false;
+      }).catch(err => console.warn("Emergency stop error:", err));
+    }
+  };
+
+  // Keyboard shortcut: Alt+J to toggle Always-On Mini Robot Desktop HUD & Escape for Emergency Stop
   document.addEventListener("keydown", (e) => {
     if (e.altKey && (e.key === "j" || e.key === "J")) {
       e.preventDefault();
@@ -1673,6 +1725,10 @@ function setupEventListeners() {
       } else {
         toggleMiniMode(true);
         if (toggleBtn) toggleBtn.classList.add("active");
+      }
+    } else if (e.key === "Escape") {
+      if (isStreaming) {
+        window.emergencyStop();
       }
     }
   });
