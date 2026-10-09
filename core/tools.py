@@ -388,6 +388,25 @@ class AssistantTools:
         return {"success": False, "error": last_error or "Unable to capture screen", "summary": f"Failed to take screenshot: {last_error}"}
 
     @staticmethod
+    def read_screen(prompt: str = "") -> dict:
+        """Captures active laptop screen and prepares it for multimodal AI vision analysis."""
+        shot_res = AssistantTools.take_screenshot()
+        if not shot_res.get("success") or not shot_res.get("output_path"):
+            return {
+                "success": False,
+                "error": shot_res.get("error", "Failed to capture screen"),
+                "summary": "I could not capture your screen right now, sir."
+            }
+        shot_path = shot_res["output_path"]
+        return {
+            "success": True,
+            "action": "read_screen",
+            "screenshot_path": shot_path,
+            "output_path": shot_path,
+            "summary": f"Screen captured. Analyzing visible display. [MEDIA: {shot_path}]"
+        }
+
+    @staticmethod
     def kill_process(process_name: str) -> dict:
         """Terminates a process by name."""
         proc = process_name.strip()
@@ -824,5 +843,52 @@ class AssistantTools:
             return cls.open_top_youtube_video(arg0)
         elif t in ["open_url", "browse"]:
             return cls.open_url(arg0)
+        elif t in ["mouse_click", "click"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.mouse_click(arg0 or None, arg1 or None)
+        elif t in ["mouse_double_click", "double_click"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.mouse_double_click(arg0 or None, arg1 or None)
+        elif t in ["mouse_right_click", "right_click"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.mouse_right_click(arg0 or None, arg1 or None)
+        elif t in ["mouse_move", "move_mouse"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.mouse_move(arg0, arg1)
+        elif t in ["mouse_scroll", "scroll"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.mouse_scroll(int(arg0 or 1))
+        elif t in ["keyboard_type", "type_text", "type"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.keyboard_type(str(arg0))
+        elif t in ["keyboard_press", "press_key", "key"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.keyboard_press(str(arg0))
+        elif t in ["keyboard_hotkey", "hotkey"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.keyboard_hotkey(*args)
+        elif t in ["window_focus", "focus_window", "switch_to_window"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.window_focus(arg0)
+        elif t in ["window_list", "list_windows"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.window_list()
+        elif t in ["window_minimize"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.window_minimize(arg0)
+        elif t in ["window_maximize"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.window_maximize(arg0)
+        elif t in ["clipboard_read", "read_clipboard"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.clipboard_read()
+        elif t in ["clipboard_write", "copy_to_clipboard"]:
+            from core.computer_control import ComputerControl
+            return ComputerControl.clipboard_write(str(arg0))
+        elif t in ["inspect_screen", "read_screen", "analyze_screen"]:
+            return cls.read_screen(arg0 or "What is on my screen?")
+        elif t in ["click_ui_element", "click_element"]:
+            from core.vision.screen_analyzer import ScreenAnalyzer
+            return ScreenAnalyzer().click_ui_element(str(arg0))
         else:
             return {"success": False, "error": f"Unknown tool: {tool_name}"}
