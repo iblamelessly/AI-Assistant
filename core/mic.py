@@ -102,12 +102,16 @@ class MicrophoneEngine:
         return AUDIO_SUPPORTED
 
     def _trigger_auto_stop(self):
-        """Dispatched when silence is detected after user speech."""
+        """Dispatched when silence is detected after user speech or timeout occurs."""
         with self._lock:
             if not self.is_recording or self._auto_stopped:
                 return
             self._auto_stopped = True
+            was_speech = self._speech_detected
         wav_bytes = self.stop_recording()
+        # Strictly ignore audio if no human speech was detected (discard ambient fan/room noise)
+        if not was_speech:
+            wav_bytes = b""
         if self._on_silence_callback:
             try:
                 self._on_silence_callback(wav_bytes)
@@ -130,6 +134,7 @@ class MicrophoneEngine:
             self._start_time = time.time()
             self._last_speech_time = self._start_time
             self._ambient_samples = []
+            self._speech_frame_count = 0
 
             def callback(indata, frames, time_info, status):
                 if not self.is_recording:
@@ -141,23 +146,27 @@ class MicrophoneEngine:
                         rms = float(np.sqrt(np.mean(indata**2)))
                         now = time.time()
 
-                        # First 300ms calibrate ambient level
-                        if now - self._start_time < 0.3:
+                        # First 350ms calibrate ambient background noise baseline
+                        if now - self._start_time < 0.35:
                             self._ambient_samples.append(rms)
                             if self._ambient_samples:
                                 self._ambient_level = max(0.015, float(np.mean(self._ambient_samples)))
                             return
 
-                        threshold = max(0.045, self._ambient_level * 1.8)
-                        if rms > threshold:
-                            self._speech_detected = True
+                        # Human voice threshold: must distinctly exceed ambient noise by at least 2.2x and be >= 0.045 RMS
+                        voice_threshold = max(0.045, self._ambient_level * 2.2)
+                        if rms > voice_threshold:
+                            self._speech_frame_count += 1
+                            # Require at least 2 distinct speech frames (~100ms) to filter out single-frame mouse clicks/snaps
+                            if self._speech_frame_count >= 2:
+                                self._speech_detected = True
                             self._last_speech_time = now
                         elif self._speech_detected:
-                            # Speech was detected and user has now paused for >= 1.1s
-                            if (now - self._last_speech_time) >= 1.1:
+                            # Genuine speech was detected and user has now paused for >= 1.0s
+                            if (now - self._last_speech_time) >= 1.0:
                                 threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
-                        elif (now - self._start_time) >= 8.0:
-                            # User never spoke after 8s timeout
+                        elif (now - self._start_time) >= 6.0:
+                            # User never spoke after 6s timeout — stop and discard noise
                             threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
                     except Exception:
                         pass
@@ -178,11 +187,12 @@ class MicrophoneEngine:
                 return False
 
     def stop_recording(self) -> bytes:
-        """Stops recording and returns WAV audio bytes."""
+        """Stops recording and returns WAV audio bytes, or empty bytes if no speech was detected."""
         with self._lock:
             if not self.is_recording:
                 return b""
             self.is_recording = False
+            had_speech = self._speech_detected
             if self._stream:
                 try:
                     self._stream.stop()
@@ -191,7 +201,7 @@ class MicrophoneEngine:
                     pass
                 self._stream = None
 
-            if not self._frames:
+            if not self._frames or not had_speech:
                 return b""
 
             audio_data = np.concatenate(self._frames, axis=0)
@@ -262,6 +272,15 @@ class MicrophoneEngine:
                 if resp.status_code == 200:
                     raw_text = resp.text.strip() if isinstance(resp.text, str) else resp.json().get("text", "").strip()
                     if raw_text:
+                        clean_lower = raw_text.lower().strip().strip(".?!")
+                        HALLUCINATION_BLACKLIST = {
+                            "thank you", "thank you very much", "thanks for watching",
+                            "subtitles by", "you", "bye", "silence", "...", "the", "a",
+                            "an", "mbc", "amara.org", "please subscribe", "subscribe",
+                            "watching", "like and subscribe", "so", "oh", "um", "uh"
+                        }
+                        if clean_lower in HALLUCINATION_BLACKLIST or clean_lower.startswith("subtitles by") or len(clean_lower) <= 2:
+                            return ""
                         normalized = self.normalize_transcript(raw_text)
                         return normalized
                 else:
@@ -277,7 +296,10 @@ class MicrophoneEngine:
             with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
                 audio = r.record(source)
             text = r.recognize_google(audio)
-            return self.normalize_transcript(text.strip())
+            clean_text = text.strip()
+            if len(clean_text) <= 2:
+                return ""
+            return self.normalize_transcript(clean_text)
         except Exception as e:
             print(f"[MicrophoneEngine] Fallback speech recognition error: {e}")
 
