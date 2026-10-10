@@ -12,6 +12,9 @@ from .permissions import PermissionGuard
 from .app_launcher import app_launcher
 from .file_search import file_search_engine
 from .model_router import SuperAIRouter
+from .tool_registry import ToolRegistry
+from .planner import TaskPlanner
+from .agent import AgentController
 
 class AssistantEngine:
     """
@@ -49,6 +52,20 @@ class AssistantEngine:
         self.ollama_url = self.config_mgr.get("ollama_url", "http://localhost:11434").rstrip("/")
         self.chat_url = f"{self.ollama_url}/api/chat"
         self.latest_media = None
+
+        self.tool_registry = ToolRegistry(permission_guard=self.permission_guard)
+        self.planner = TaskPlanner(tool_registry=self.tool_registry, groq_client=self.groq_client, gemini_client=self.gemini_client)
+        self.agent_controller = AgentController(
+            tool_registry=self.tool_registry,
+            planner=self.planner,
+            permission_guard=self.permission_guard
+        )
+
+    def emergency_stop(self) -> dict:
+        """Immediately halts active autonomous agent loop."""
+        if hasattr(self, "agent_controller") and self.agent_controller:
+            return self.agent_controller.stop()
+        return {"success": True, "action": "emergency_stop", "summary": "No active agent loop."}
 
     @property
     def model(self) -> str:
@@ -556,6 +573,18 @@ class AssistantEngine:
                 self.latest_media = {"name": Path(res["output_path"]).name, "path": res["output_path"], "type": "image"}
             return {"tool": "take_screenshot", "param": "", "result": res}
 
+        # Screen Reading / Vision Perception (e.g. "read my screen", "what is on my screen", "look at my screen")
+        if re.search(r"^(?:please\s+)?(?:read|analyze|describe|inspect|check|look\s+at|what\s+is\s+on)\s+(?:my\s+|the\s+)?(?:screen|display|desktop|monitor)\b", msg, re.IGNORECASE) or msg in ["read screen", "read my screen", "what's on my screen", "what is on my screen", "look at my screen"]:
+            res = AssistantTools.read_screen()
+            if res.get("success"):
+                shot_path = res.get("screenshot_path")
+                return {
+                    "tool": "read_screen",
+                    "param": shot_path,
+                    "screenshot_path": shot_path,
+                    "result": res
+                }
+
         # System stats
         if any(phrase in msg for phrase in ["system stats", "system metrics", "check system metrics", "speak the system metrics", "cpu usage", "ram usage", "battery level", "pc performance"]):
             res = AssistantTools.get_system_stats()
@@ -1025,7 +1054,7 @@ class AssistantEngine:
                     on_chunk(confirm_msg)
 
                     set_status("Speaking...", "speaking", "Synthesizing English voice response...")
-                    audio_b64 = self.voice_engine.generate_speech_base64(confirm_msg) if self.voice_engine.is_enabled() else None
+                    audio_b64 = self.voice_engine.generate_speech_base64(confirm_msg) if (voice_mode and self.voice_engine.is_enabled()) else None
                     record_turn("user", user_message)
                     record_turn("assistant", confirm_msg, tool_info=tool_info)
                     on_complete(confirm_msg, tool_info, audio_b64, None, session_id)
@@ -1034,7 +1063,7 @@ class AssistantEngine:
                     cancel_msg = eval_res.get("message", "Operation cancelled, sir.")
                     on_chunk(cancel_msg)
                     set_status("Speaking...", "speaking", "Synthesizing English voice response...")
-                    audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
+                    audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if (voice_mode and self.voice_engine.is_enabled()) else None
                     record_turn("user", user_message)
                     record_turn("assistant", cancel_msg)
                     on_complete(cancel_msg, None, audio_b64, None, session_id)
@@ -1051,7 +1080,7 @@ class AssistantEngine:
         if ambiguity_q:
             on_chunk(ambiguity_q)
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
-            audio_b64 = self.voice_engine.generate_speech_base64(ambiguity_q) if self.voice_engine.is_enabled() else None
+            audio_b64 = self.voice_engine.generate_speech_base64(ambiguity_q) if (voice_mode and self.voice_engine.is_enabled()) else None
             record_turn("user", user_message)
             record_turn("assistant", ambiguity_q)
             on_complete(ambiguity_q, None, audio_b64, None, session_id)
@@ -1068,7 +1097,7 @@ class AssistantEngine:
                     if eval_res.get("status") == "cancel":
                         cancel_msg = "File/folder operation cancelled, sir."
                         on_chunk(cancel_msg)
-                        audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
+                        audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if (voice_mode and self.voice_engine.is_enabled()) else None
                         record_turn("user", user_message)
                         record_turn("assistant", cancel_msg)
                         on_complete(cancel_msg, None, audio_b64, None, session_id)
@@ -1087,7 +1116,7 @@ class AssistantEngine:
                         if on_tool:
                             on_tool(tool_info)
                         on_chunk(resp_msg)
-                        audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen['name']} for you, sir.") if self.voice_engine.is_enabled() else None
+                        audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen['name']} for you, sir.") if (voice_mode and self.voice_engine.is_enabled()) else None
                         record_turn("user", user_message)
                         record_turn("assistant", resp_msg, tool_info=tool_info)
                         on_complete(resp_msg, tool_info, audio_b64, None, session_id)
@@ -1099,7 +1128,7 @@ class AssistantEngine:
             if chosen_app == "CANCEL":
                 cancel_msg = "App launch cancelled, sir."
                 on_chunk(cancel_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message)
                 record_turn("assistant", cancel_msg)
                 on_complete(cancel_msg, None, audio_b64, None, session_id)
@@ -1115,7 +1144,7 @@ class AssistantEngine:
                     on_tool(tool_info)
                 resp_msg = f"🚀 Opened **{chosen_app}** for you, sir."
                 on_chunk(resp_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen_app} for you, sir.") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"Opened {chosen_app} for you, sir.") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message)
                 record_turn("assistant", resp_msg, tool_info=tool_info)
                 on_complete(resp_msg, tool_info, audio_b64, None, session_id)
@@ -1132,7 +1161,7 @@ class AssistantEngine:
                 return
             elif web_res:
                 on_chunk(web_res)
-                audio_b64 = self.voice_engine.generate_speech_base64(web_res) if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(web_res) if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message)
                 record_turn("assistant", web_res)
                 on_complete(web_res, None, audio_b64, None, session_id)
@@ -1145,6 +1174,36 @@ class AssistantEngine:
             ollama_url=self.chat_url,
             model=self.ollama_model
         )
+
+        # 4.1. Check Emergency Stop / Cancel command
+        if user_message.lower().strip() in ["stop", "cancel", "halt", "emergency stop", "abort"]:
+            self.emergency_stop()
+            cancel_msg = "Emergency stop acknowledged. All active autonomous operations halted, sir."
+            on_chunk(cancel_msg)
+            audio_b64 = self.voice_engine.generate_speech_base64(cancel_msg) if (voice_mode and self.voice_engine.is_enabled()) else None
+            record_turn("user", user_message)
+            record_turn("assistant", cancel_msg)
+            on_complete(cancel_msg, None, audio_b64, None, session_id)
+            return
+
+        # 4.2. Autonomous Multi-Step Agent Execution
+        if any(sep in user_message.lower() for sep in [", search", ", open", ", then", " and search", " and open", " and then", " and click", " and tell me"]):
+            plan = self.planner.plan_task(user_message)
+            if plan and plan.is_multi_step and len(plan.steps) > 1:
+                set_status("Planning task...", "thinking", f"Autonomous Agent executing {len(plan.steps)}-step task...")
+                agent_res = self.agent_controller.execute_goal(
+                    goal=user_message,
+                    on_status=set_status,
+                    on_tool=lambda tinfo: on_tool(tinfo) if on_tool else None,
+                    on_chunk=on_chunk
+                )
+                summary_text = agent_res.get("summary", "Task completed.")
+                on_chunk(f"\n{summary_text}\n")
+                audio_b64 = self.voice_engine.generate_speech_base64(summary_text) if (voice_mode and self.voice_engine.is_enabled()) else None
+                record_turn("user", user_message)
+                record_turn("assistant", summary_text)
+                on_complete(summary_text, None, audio_b64, None, session_id)
+                return
 
         # 5. Check for fast-path direct tool execution
         fast_action = self._detect_fast_intent(user_message, session_id=session_id)
@@ -1174,7 +1233,7 @@ class AssistantEngine:
                     f"[Suggestion: {sugg_chips}]"
                 )
                 on_chunk(doubt_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching {fast_action['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching {fast_action['query']}. Which one would you like to open?") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message)
                 record_turn("assistant", doubt_msg)
                 on_complete(doubt_msg, None, audio_b64, None, session_id)
@@ -1189,7 +1248,7 @@ class AssistantEngine:
                     f"[Suggestion: {sugg_chips}]"
                 )
                 on_chunk(doubt_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {fast_action['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {fast_action['query']}. Which one would you like to open?") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message)
                 record_turn("assistant", doubt_msg)
                 on_complete(doubt_msg, None, audio_b64, None, session_id)
@@ -1202,10 +1261,46 @@ class AssistantEngine:
                     f"[Suggestion: Open {name} in Browser | Cancel]"
                 )
                 on_chunk(ask_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message)
                 record_turn("assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64, None, session_id)
+                return
+            elif fast_action.get("tool") == "read_screen":
+                shot_path = fast_action.get("screenshot_path")
+                set_status("Analyzing...", "analyzing", "Inspecting your screen with multimodal AI vision...")
+                vision_analysis = ""
+                def _vision_chunk(tok):
+                    nonlocal vision_analysis
+                    vision_analysis += tok
+                    on_chunk(tok)
+
+                vision_prompt = (
+                    "You are JARVIS. Describe what is currently on the user's screen clearly and concisely in 2-3 sentences. "
+                    "Identify open applications, active windows, visible documents, videos, search results, or key buttons."
+                )
+                try:
+                    self.groq_client.stream_vision_chat(vision_prompt, [shot_path], _vision_chunk)
+                except Exception as e:
+                    vision_analysis = f"Screen captured. Vision analysis error: {e}"
+                    on_chunk(vision_analysis)
+
+                if not vision_analysis:
+                    vision_analysis = "I have captured your screen, sir. The display is online and active."
+                    on_chunk(vision_analysis)
+
+                resp_msg = self._append_preview_markup(vision_analysis, shot_path)
+                audio_b64 = None
+                if voice_mode and self.voice_engine.is_enabled():
+                    try:
+                        speech_text = resp_msg.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
+                        audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
+                    except Exception as ex:
+                        print(f"[AssistantEngine] Voice synthesis error: {ex}")
+                record_turn("user", user_message)
+                record_turn("assistant", resp_msg, tool_info=fast_action)
+                model_used = getattr(self.groq_client, "last_model_used", self.model)
+                on_complete(resp_msg, fast_action, audio_b64, model_used, session_id)
                 return
             elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot"]:
                 t_tool = fast_action.get("tool")
@@ -1228,7 +1323,7 @@ class AssistantEngine:
                 on_chunk(resp_msg)
                 set_status("Speaking...", "speaking", "Synthesizing English voice response...")
                 audio_b64 = None
-                if self.voice_engine.is_enabled():
+                if voice_mode and self.voice_engine.is_enabled():
                     try:
                         speech_text = resp_msg.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
                         audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
@@ -1379,7 +1474,7 @@ class AssistantEngine:
                 on_chunk(ask_confirm_msg)
                 full_response += ask_confirm_msg
 
-                audio_b64 = self.voice_engine.synthesize_and_speak(inspection["question"], play_audio=True) if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.synthesize_and_speak(inspection["question"], play_audio=True) if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message, atts=attachments)
                 record_turn("assistant", full_response)
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
@@ -1415,7 +1510,7 @@ class AssistantEngine:
                     f"[Suggestion: {sugg_chips}]"
                 )
                 on_chunk(doubt_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple {target_type}s matching. Which one would you like to open?") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message, atts=attachments)
                 record_turn("assistant", doubt_msg)
                 on_complete(doubt_msg, None, audio_b64, None, session_id)
@@ -1430,7 +1525,7 @@ class AssistantEngine:
                     f"[Suggestion: {sugg_chips}]"
                 )
                 on_chunk(doubt_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {t_result['query']}. Which one would you like to open?") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I found multiple applications matching {t_result['query']}. Which one would you like to open?") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message, atts=attachments)
                 record_turn("assistant", doubt_msg)
                 on_complete(doubt_msg, None, audio_b64, None, session_id)
@@ -1443,7 +1538,7 @@ class AssistantEngine:
                     f"[Suggestion: Open {name} in Browser | Cancel]"
                 )
                 on_chunk(ask_msg)
-                audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if self.voice_engine.is_enabled() else None
+                audio_b64 = self.voice_engine.generate_speech_base64(f"I couldn't find {name} installed locally. Would you like to open it in your browser?") if (voice_mode and self.voice_engine.is_enabled()) else None
                 record_turn("user", user_message, atts=attachments)
                 record_turn("assistant", ask_msg)
                 on_complete(ask_msg, None, audio_b64, None, session_id)
@@ -1468,9 +1563,9 @@ class AssistantEngine:
         if out_p:
             clean_display = self._append_preview_markup(clean_display, out_p)
 
-        # 9. Voice Synthesis
+        # 9. Voice Synthesis (ONLY for oral speech / voice mode)
         audio_b64 = None
-        if self.voice_engine.is_enabled():
+        if voice_mode and self.voice_engine.is_enabled():
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             try:
                 speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
