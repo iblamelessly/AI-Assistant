@@ -91,6 +91,16 @@ class PermissionGuard:
 
         # Shell command safety check
         if t in ["run_command", "run_shell_command"]:
+            # High-risk: shutdown / restart / formatting
+            if re.search(r"\b(?:shutdown|restart-computer|stop-computer|diskpart|format\s+[a-z]:)\b", str(arg0).lower()):
+                question = f"🛑 HIGH RISK ACTION: You are about to execute a system command (`{arg0}`). This will reboot, shutdown, or alter disk partitions! Confirm explicitly? [Yes / No]"
+                self.pending_confirmation = {
+                    "tool": tool_name,
+                    "args": args,
+                    "question": question
+                }
+                return {"requires_approval": True, "question": question, "action_info": arg0}
+
             if self.is_destructive_command(arg0):
                 question = f"⚠️ Confirmation required, sir: You are about to run a destructive command (`{arg0}`). Proceed? [Yes / No]"
                 self.pending_confirmation = {

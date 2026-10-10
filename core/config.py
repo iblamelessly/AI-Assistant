@@ -14,7 +14,12 @@ DEFAULT_CONFIG = {
     "voice_conversation_mode": False,
     "continuous_listen": True,
     "confirm_sensitive_actions": True,
-    "confirm_personal_data_access": True
+    "confirm_personal_data_access": True,
+    "window_mode": "normal",
+    "window_x": 100,
+    "window_y": 100,
+    "start_on_boot": False,
+    "max_agent_steps": 10
 }
 
 class ConfigManager:
