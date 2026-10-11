@@ -9,28 +9,24 @@ A smart, high-performance personal AI desktop assistant built with **Python**, *
 
 ---
 
-- 🧠 **Super AI Architecture & Cognitive Dispatcher**:
-  - **Unified Brain Dispatcher**: Uses an intelligent Groq LLM classifier (`llama-3.1-8b-instant`) to comprehend natural, creative, and multi-step requests without depending solely on rigid regex triggers.
-  - **Dynamic Multimodal Synthesis**: Seamlessly chains documents, images, video slideshows, and vision analysis under one unified interface.
+- 🤖 **Autonomous Multi-Step Agent Loop & Task Planner**:
+  - **Goal Decomposition & Planning**: Decomposes complex user instructions (*"open Chrome, search for Python courses, open the first useful result"*) into structured sequential steps.
+  - **Observation & Verification**: Verifies action outcomes via process/window states, filesystem checks, and GUI observations instead of falsely claiming completion.
+  - **Error Recovery & Loop Control**: Automatic recovery on failures, strict 10-step safety limit, and instantaneous thread-safe Emergency Stop (`Esc` or "stop").
 
-- 🎨 **Generative AI Media Creation & Neural Editing**:
-  - **Text-to-Image Generation**: Photorealistic 8K image generation powered by FLUX / Pollinations.ai with automated prompt enhancement and 11 distinct styles (anime, cyberpunk, 3D CGI, watercolor, oil painting, sketch, cinematic).
-  - **AI Image Transformation & Style Transfer**: Alter uploaded or generated images with neural filters (cyberpunk glow, pencil sketch, vintage film, noir monochrome, vibrant HDR).
-  - **Text-to-Video Slideshow Synthesis**: Autonomous generation of multi-scene cinematic videos complete with LLM scene planning, FLUX imagery, and synchronized neural voice narration stitched via hardware-accelerated FFmpeg.
-  - **Interactive Lightbox & Media Gallery**: Click any generated or attached media to view full resolution with quick access to Reveal in Windows Explorer.
+- 🖱️ **Controlled Computer Automation Layer**:
+  - **Full Mouse & Keyboard Control**: Mouse move, click, double click, right click, drag, scroll, and Unicode keyboard typing via native Win32 `SendInput`.
+  - **Window Management**: Find, focus, minimize, maximize, resize, move, and close windows.
+  - **Clipboard Integration**: Safe read and write operations on Windows clipboard.
 
-- 📄 **Autonomous Professional Document Generator**:
-  - **PowerPoint Presentations (.pptx)**: Generates 10-14 slide presentations featuring 21 professional themes, executive cards, split layouts, and metrics grids.
-  - **Word Documents (.docx) & PDF Reports**: Executive documents complete with callout banners, tables, structured sections, and dynamic styling.
+- 👁️ **Vision-Guided GUI Interaction**:
+  - **Multimodal Screen Perception**: Captures high-DPI screenshots via Win32 GDI BitBlt without screen-grab errors.
+  - **Resolution-Independent Element Localization**: Scales relative coordinates to screen resolution to locate and click UI elements dynamically.
 
-- 📊 **Token & Quota Usage Dashboard**:
-  - Real-time token consumption tracking (Prompt, Completion, Total billed).
-  - Generative creation counters (AI Images, Videos, and Documents generated).
-  - Live Groq Cloud rate limit metrics and visual quota capacity indicators.
-
-- 🎙️ **On-Demand Floating JARVIS Voice Orb & Accent Adaptation**:
-  - **On-Demand Voice Orb**: Interactive voice orb widget toggled on demand via the header icon or `Alt+J` shortcut.
-  - **Whisper Accent Accuracy**: Hardware voice input transcribed via Groq Whisper with phonetic normalization for international accents.
+- 🪟 **Persistent Floating JARVIS & System Tray**:
+  - **Native System Tray Integration**: Background tray menu (Open JARVIS, Mini Robot, Voice Listening, Settings, Exit).
+  - **Global Alt+J Hotkey**: Toggles JARVIS from anywhere in Windows, even when other applications or games are active.
+  - **Continuous Hands-Free Voice Companion**: Calibrated Voice Activity Detection (VAD) with noise immunity and auto-re-arming.
 
 ---
 
