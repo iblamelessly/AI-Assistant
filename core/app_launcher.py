@@ -489,11 +489,7 @@ class AppLauncher:
         """Opens the first video matching query (or the last searched YouTube query) directly in browser."""
         target_q = (query or getattr(self, "last_youtube_query", None) or "").strip()
         if not target_q:
-            return {
-                "success": False,
-                "error": "No YouTube search query available",
-                "summary": "Please tell me what video or topic you would like me to open on YouTube, sir."
-            }
+            target_q = "trending"
         top_url = self.get_top_youtube_video(target_q)
         if top_url:
             self.last_youtube_query = target_q
