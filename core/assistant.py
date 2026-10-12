@@ -603,6 +603,17 @@ class AssistantEngine:
                 res = app_launcher.open_top_youtube_video(song_topic)
                 return {"tool": "open_top_youtube_video", "param": song_topic, "result": res}
 
+        # Open specific video, channel, or topic on YouTube (e.g. "open neural stack channel on youtube", "open lofi on youtube")
+        open_yt_query_match = re.search(
+            r"^(?:please\s+)?(?:open|launch|go\s+to|show|view|find)\s+(.+?)\s+(?:on|in|at)\s+(?:youtube|you\s*tube|yt)$",
+            msg, re.IGNORECASE
+        )
+        if open_yt_query_match:
+            yt_topic = open_yt_query_match.group(1).strip()
+            if yt_topic and len(yt_topic) > 1:
+                res = app_launcher.resolve_and_search("youtube", yt_topic)
+                return {"tool": "web_search", "param": yt_topic, "result": res}
+
         # Open YouTube homepage
         if re.search(r"^(?:please\s+)?(?:open|launch|go\s+to)\s+(?:the\s+)?(?:youtube|you\s*tube|yt)$", msg, re.IGNORECASE):
             res = app_launcher.resolve_and_search("youtube", "")
@@ -1302,7 +1313,7 @@ class AssistantEngine:
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
                 on_complete(resp_msg, fast_action, audio_b64, model_used, session_id)
                 return
-            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot"]:
+            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "open_folder", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot", "web_search", "open_url", "open_top_youtube_video"]:
                 t_tool = fast_action.get("tool")
                 if t_tool in ["create_presentation", "create_document", "create_pdf"]:
                     set_status("Creating...", "creating", f"Generating slides and formatting '{fast_action.get('param', 'document')}'...")

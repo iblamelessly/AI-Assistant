@@ -44,6 +44,7 @@ class SystemTrayManager:
         self._thread = None
         self._running = False
         self._hotkey_id = 1001
+        self._voice_hotkey_id = 1002
 
     @staticmethod
     def is_startup_enabled() -> bool:
@@ -149,11 +150,15 @@ class SystemTrayManager:
 
                 elif msg == win32con.WM_HOTKEY:
                     if wparam == self._hotkey_id:
-                        # Global Alt+J triggered anywhere in Windows!
+                        # Global Alt+J triggered anywhere in Windows: toggles Mini HUD / window
                         if self.on_mini:
                             self.on_mini()
                         elif self.on_show:
                             self.on_show()
+                    elif wparam == self._voice_hotkey_id:
+                        # Global Ctrl+J triggered anywhere in Windows: toggles Voice Listening on/off
+                        if self.on_voice:
+                            self.on_voice()
                     return 0
 
                 elif msg == win32con.WM_DESTROY:
@@ -164,6 +169,7 @@ class SystemTrayManager:
                     except Exception:
                         pass
                     user32.UnregisterHotKey(hwnd, self._hotkey_id)
+                    user32.UnregisterHotKey(hwnd, self._voice_hotkey_id)
                     win32gui.PostQuitMessage(0)
                     return 0
 
@@ -181,9 +187,13 @@ class SystemTrayManager:
                 0, 0, 0, 0, 0, 0, 0, wc.hInstance, None
             )
 
-            # Register Global Hotkey Alt+J
+            # Register Global Hotkey Alt+J (Mini HUD toggle)
             # MOD_ALT = 0x0001, MOD_NOREPEAT = 0x4000, 'J' = 0x4A
             user32.RegisterHotKey(self._hwnd, self._hotkey_id, 0x0001 | 0x4000, 0x4A)
+
+            # Register Global Hotkey Ctrl+J (Voice Listening toggle)
+            # MOD_CONTROL = 0x0002, MOD_NOREPEAT = 0x4000, 'J' = 0x4A
+            user32.RegisterHotKey(self._hwnd, self._voice_hotkey_id, 0x0002 | 0x4000, 0x4A)
 
             # Add Tray Icon
             hicon = win32gui.LoadIcon(0, win32con.IDI_APPLICATION)

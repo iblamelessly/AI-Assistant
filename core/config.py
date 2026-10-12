@@ -12,7 +12,7 @@ DEFAULT_CONFIG = {
     "ollama_url": "http://localhost:11434",
     "voice_enabled": True,
     "voice_conversation_mode": False,
-    "continuous_listen": True,
+    "continuous_listen": False,
     "confirm_sensitive_actions": True,
     "confirm_personal_data_access": True,
     "window_mode": "normal",

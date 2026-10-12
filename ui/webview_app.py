@@ -324,6 +324,26 @@ class AssistantApi:
             print(f"[AssistantApi] restore_and_focus error: {e}")
 
     def trigger_voice_toggle(self):
+        """Toggles hardware microphone listening on/off with instant audible feedback."""
+        try:
+            import winsound
+            def _play_cue():
+                try:
+                    is_rec = getattr(self.mic_engine, "is_recording", False)
+                    if not is_rec:
+                        # Starting to listen: crisp rising chime
+                        winsound.Beep(1200, 90)
+                        winsound.Beep(1600, 110)
+                    else:
+                        # Stopping listening: falling confirmation tone
+                        winsound.Beep(1500, 80)
+                        winsound.Beep(1000, 100)
+                except Exception:
+                    pass
+            threading.Thread(target=_play_cue, daemon=True).start()
+        except Exception:
+            pass
+
         if self._window:
             try:
                 self._window.evaluate_js("if (window.toggleRecording) { window.toggleRecording(); }")
