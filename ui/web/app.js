@@ -13,6 +13,7 @@ let pendingAttachments = [];
 let voiceConversationMode = false;
 let continuousListen = true;
 let subtitleFadeTimer = null;
+let pendingCommandQueue = [];
 
 function showOrbSubtitle(text) {
   const card = document.getElementById("orb-subtitle-card");
@@ -1122,26 +1123,30 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
   if (isVoice && audioB64) {
     playSpeech(audioB64, fullResponse, () => {
       hideOrbSubtitle(2500);
-      // Continuous hands-free listening: automatically resume listening so user never needs to touch the robot!
-      if (continuousListen && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+      if (continuousListen && voiceConversationMode) {
         setTimeout(() => {
-          if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+          if (!isStreaming && !isNativeRecording && voiceConversationMode) {
             setOrbListening(true);
             toggleRecording();
           }
         }, 350);
+      } else {
+        const label = document.getElementById("orb-status-text");
+        if (label) label.textContent = "Press Ctrl+J or tap robot to talk";
       }
     });
   } else if (isVoice) {
     hideOrbSubtitle(2000);
-    // Continuous hands-free listening when no audio was generated
-    if (continuousListen && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+    if (continuousListen && voiceConversationMode) {
       setTimeout(() => {
-        if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+        if (!isStreaming && !isNativeRecording && voiceConversationMode) {
           setOrbListening(true);
           toggleRecording();
         }
       }, 350);
+    } else {
+      const label = document.getElementById("orb-status-text");
+      if (label) label.textContent = "Press Ctrl+J or tap robot to talk";
     }
   }
 
@@ -1157,6 +1162,21 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
   window.pywebview.api.get_memory().then((mem) => {
     populateMemoryUI(mem);
   });
+
+  // If a command was queued while Jarvis was processing, dispatch it immediately!
+  if (pendingCommandQueue && pendingCommandQueue.length > 0) {
+    const nextCmd = pendingCommandQueue.shift();
+    console.log("Dispatching queued command:", nextCmd);
+    const chatInput = document.getElementById("chat-input");
+    if (chatInput) {
+      chatInput.value = nextCmd;
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
+    }
+    setTimeout(() => {
+      sendMessage();
+    }, 150);
+  }
 };
 
 // Send Message with dynamic activity status initialization
@@ -1271,13 +1291,8 @@ window.setMiniModeUI = function(isMini) {
   const toggleBtn = document.getElementById("btn-toggle-orb");
   if (isMini) {
     document.body.classList.add("mini-mode");
-    voiceConversationMode = true;
-    continuousListen = true;
     if (toggleBtn) toggleBtn.classList.add("active");
-    showVoiceOrb("Mini Robot active — listening...");
-    if (!isNativeRecording && !isStreaming) {
-      setTimeout(() => { toggleRecording(); }, 350);
-    }
+    showVoiceOrb("Mini Robot ready — press Ctrl+J or tap to talk");
   } else {
     document.body.classList.remove("mini-mode");
     if (toggleBtn) toggleBtn.classList.remove("active");
@@ -1312,9 +1327,79 @@ function setOrbListening(active) {
 }
 
 // Hardware Microphone & Voice Input Controller (Groq Whisper Bridge)
+// ========================================================
+// Option B: Realtime Live Speech API & Voice Transmission Bridge
+// ========================================================
 let isNativeRecording = false;
 let recordingAutoStopTimer = null;
 let transcriptionSafetyTimer = null;
+let webSpeechRecognizer = null;
+let webSpeechActive = false;
+let webSpeechFinalReceived = false;
+let lastProcessedVoiceText = "";
+let lastVoiceProcessedTime = 0;
+
+function setupWebSpeech() {
+  if (('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window)) {
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      webSpeechRecognizer = new SpeechRecognition();
+      webSpeechRecognizer.continuous = false;
+      webSpeechRecognizer.interimResults = true;
+      webSpeechRecognizer.lang = 'en-US';
+
+      webSpeechRecognizer.onstart = function() {
+        webSpeechActive = true;
+        webSpeechFinalReceived = false;
+      };
+
+      webSpeechRecognizer.onresult = function(event) {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        const displayText = (finalTranscript || interimTranscript).trim();
+        if (displayText) {
+          const chatInput = document.getElementById("chat-input");
+          if (chatInput) {
+            chatInput.value = displayText;
+          }
+          showOrbSubtitle(displayText);
+        }
+
+        if (finalTranscript && finalTranscript.trim()) {
+          webSpeechFinalReceived = true;
+          if (isNativeRecording) {
+            stopRecordingUI();
+            setOrbListening(false);
+            isNativeRecording = false;
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.stop_voice_recording) {
+              window.pywebview.api.stop_voice_recording();
+            }
+          }
+          window.onVoiceTranscribed(finalTranscript.trim());
+        }
+      };
+
+      webSpeechRecognizer.onerror = function(err) {
+        webSpeechActive = false;
+      };
+
+      webSpeechRecognizer.onend = function() {
+        webSpeechActive = false;
+      };
+    } catch (e) {
+      webSpeechRecognizer = null;
+    }
+  }
+}
 
 // Asynchronous callback pushed when background recording thread finishes initialization
 window.onVoiceRecordingStarted = function(status) {
@@ -1336,7 +1421,24 @@ window.onVoiceTranscribed = function(transcribedText) {
   }
 
   const cleanText = (transcribedText || "").trim();
+  const now = Date.now();
+  if (cleanText && cleanText.toLowerCase() === lastProcessedVoiceText.toLowerCase() && (now - lastVoiceProcessedTime) < 2500) {
+    return; // Ignore duplicate from dual-engine pipeline
+  }
+
   if (cleanText) {
+    lastProcessedVoiceText = cleanText;
+    lastVoiceProcessedTime = now;
+
+    if (isStreaming) {
+      // User spoke another command while Jarvis is still processing the previous one!
+      console.log("Queuing command while processing:", cleanText);
+      pendingCommandQueue.push(cleanText);
+      showOrbSubtitle(`Queued next command: "${cleanText}"`);
+      const label = document.getElementById("orb-status-text");
+      if (label) label.textContent = `Queued (${pendingCommandQueue.length}): ${cleanText.substring(0, 20)}...`;
+      return;
+    }
     if (chatInput) {
       chatInput.value = cleanText;
       chatInput.style.height = "auto";
@@ -1371,12 +1473,22 @@ function toggleRecording() {
   const chatInput = document.getElementById("chat-input");
 
   if (!isNativeRecording) {
-    // Start Recording from hardware microphone
+    // Start Recording from hardware microphone & Web Speech API
     isNativeRecording = true;
     if (micBtn) micBtn.classList.add("listening");
     setOrbListening(true);
     if (chatInput) {
       chatInput.placeholder = "🎙️ Listening... Speak now (Click mic or press Enter to send)";
+    }
+
+    if (!webSpeechRecognizer) {
+      setupWebSpeech();
+    }
+    if (webSpeechRecognizer) {
+      try {
+        webSpeechFinalReceived = false;
+        webSpeechRecognizer.start();
+      } catch (e) {}
     }
 
     if (window.pywebview && window.pywebview.api && window.pywebview.api.start_voice_recording) {
@@ -1391,17 +1503,20 @@ function toggleRecording() {
       });
     }
 
-    // Auto-stop after 8 seconds if user forgets to click stop
+    // Auto-stop after 4 seconds if user forgets to click stop
     clearTimeout(recordingAutoStopTimer);
     recordingAutoStopTimer = setTimeout(() => {
       if (isNativeRecording) {
         toggleRecording();
       }
-    }, 8000);
+    }, 4000);
 
   } else {
     // Stop Recording & Transcribe asynchronously on background thread
     clearTimeout(recordingAutoStopTimer);
+    if (webSpeechRecognizer && webSpeechActive) {
+      try { webSpeechRecognizer.stop(); } catch (e) {}
+    }
     stopRecordingUI();
     setOrbListening(false);
     if (chatInput) {
@@ -1713,9 +1828,12 @@ function setupEventListeners() {
     }
   };
 
-  // Keyboard shortcut: Alt+J to toggle Always-On Mini Robot Desktop HUD & Escape for Emergency Stop
+  // Keyboard shortcut: Ctrl+J for Voice Listening Toggle, Alt+J to toggle Always-On Mini Robot Desktop HUD & Escape for Emergency Stop
   document.addEventListener("keydown", (e) => {
-    if (e.altKey && (e.key === "j" || e.key === "J")) {
+    if (e.ctrlKey && !e.altKey && (e.key === "j" || e.key === "J")) {
+      e.preventDefault();
+      toggleRecording();
+    } else if (e.altKey && (e.key === "j" || e.key === "J")) {
       e.preventDefault();
       const toggleBtn = document.getElementById("btn-toggle-orb");
       if (isMiniModeActive) {
