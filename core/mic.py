@@ -142,26 +142,26 @@ class MicrophoneEngine:
                         rms = float(np.sqrt(np.mean(indata**2)))
                         now = time.time()
 
-                        # First 150ms calibrate ambient background noise baseline
-                        if now - self._start_time < 0.15:
+                        # First 250ms calibrate ambient background noise baseline
+                        if now - self._start_time < 0.25:
                             self._ambient_samples.append(rms)
                             if self._ambient_samples:
-                                self._ambient_level = max(0.001, float(np.mean(self._ambient_samples)))
+                                self._ambient_level = max(0.005, float(np.mean(self._ambient_samples)))
                             return
 
-                        # Sensitive human voice threshold: slightly above ambient noise
-                        voice_threshold = max(0.003, self._ambient_level * 1.25)
+                        # Natural human voice threshold: must distinctly exceed ambient noise
+                        voice_threshold = max(0.020, self._ambient_level * 1.8)
                         if rms > voice_threshold:
                             self._speech_frame_count += 1
-                            if self._speech_frame_count >= 1:
+                            if self._speech_frame_count >= 2:
                                 self._speech_detected = True
                             self._last_speech_time = now
                         elif self._speech_detected:
-                            # Genuine speech was detected and user paused for >= 0.6s -> auto-stop
-                            if (now - self._last_speech_time) >= 0.6:
+                            # Genuine speech was detected and user paused naturally for >= 1.2s -> auto-stop
+                            if (now - self._last_speech_time) >= 1.2:
                                 threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
-                        elif (now - self._start_time) >= 5.0:
-                            # User stopped talking or paused after 5s timeout -> trigger auto-stop
+                        elif (now - self._start_time) >= 8.0:
+                            # User stopped talking or paused after 8s timeout -> trigger auto-stop
                             threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
                     except Exception:
                         pass
@@ -200,11 +200,10 @@ class MicrophoneEngine:
 
             audio_data = np.concatenate(self._frames, axis=0)
 
-            # Dynamic Automatic Gain Control (AGC) for quiet microphones:
+            # Balanced Automatic Gain Control (AGC) for quiet microphones without blowing out noise:
             peak = float(np.max(np.abs(audio_data)))
-            if peak > 0.0002:
-                # Amplify quiet speech up to 15x so Whisper & Google Speech hear with high clarity
-                gain = min(15.0, 0.75 / peak)
+            if 0.005 < peak < 0.5:
+                gain = min(5.0, 0.70 / peak)
                 audio_data = audio_data * gain
 
             buf = io.BytesIO()
@@ -269,8 +268,20 @@ class MicrophoneEngine:
                     headers=headers,
                     files=files,
                     data=data,
-                    timeout=4
+                    timeout=10
                 )
+                if resp.status_code != 200:
+                    # Retry with whisper-large-v3 if turbo model has an outage
+                    data["model"] = "whisper-large-v3"
+                    files = {"file": ("voice_input.wav", wav_bytes, "audio/wav")}
+                    resp = requests.post(
+                        "https://api.groq.com/openai/v1/audio/transcriptions",
+                        headers=headers,
+                        files=files,
+                        data=data,
+                        timeout=10
+                    )
+
                 if resp.status_code == 200:
                     raw_text = resp.text.strip() if isinstance(resp.text, str) else resp.json().get("text", "").strip()
                     if raw_text:
@@ -290,11 +301,11 @@ class MicrophoneEngine:
             except Exception as e:
                 print(f"[MicrophoneEngine] Groq transcription error: {e}")
 
-        # Secondary Fallback: speech_recognition Google Speech API (max 5s timeout)
+        # Secondary Fallback: speech_recognition Google Speech API (max 8s timeout)
         try:
             import speech_recognition as sr
             r = sr.Recognizer()
-            r.operation_timeout = 3
+            r.operation_timeout = 8
             with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
                 audio = r.record(source)
             text = r.recognize_google(audio)

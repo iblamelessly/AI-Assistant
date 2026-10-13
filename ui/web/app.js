@@ -1200,34 +1200,29 @@ function sendMessage() {
   renderAttachmentPreviews();
 
   const isVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
-  const saveHistory = !isVoice && !isMiniModeActive;
-  const targetSessionId = saveHistory ? (currentSessionId || null) : "ephemeral";
 
-  // Only append bubbles to the main chat window if saving history
-  if (saveHistory) {
-    appendMessageBubble("user", userText, null, attachmentsToSend);
+  // Append user message bubble to conversation history
+  appendMessageBubble("user", userText, null, attachmentsToSend);
 
-    const container = document.getElementById("messages-container");
-    const row = document.createElement("div");
-    row.className = "message-row assistant";
+  // Create assistant bubble with dynamic activity widget in conversation
+  const container = document.getElementById("messages-container");
+  const row = document.createElement("div");
+  row.className = "message-row assistant";
 
-    const avatar = document.createElement("div");
-    avatar.className = "message-avatar";
-    avatar.textContent = "J";
+  const avatar = document.createElement("div");
+  avatar.className = "message-avatar";
+  avatar.textContent = "J";
 
-    const bubble = document.createElement("div");
-    bubble.className = "message-bubble";
-    bubble.innerHTML = renderActivityCardHtml(currentStatusText, currentStatusType, currentStatusDetail);
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble";
+  bubble.innerHTML = renderActivityCardHtml(currentStatusText, currentStatusType, currentStatusDetail);
 
-    row.appendChild(avatar);
-    row.appendChild(bubble);
-    container.appendChild(row);
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+  container.appendChild(row);
 
-    currentAssistantBubble = bubble;
-    scrollToBottom();
-  } else {
-    currentAssistantBubble = null;
-  }
+  currentAssistantBubble = bubble;
+  scrollToBottom();
 
   currentStreamBuffer = "";
 
@@ -1238,6 +1233,10 @@ function sendMessage() {
 
   const orbLabel = document.getElementById("orb-status-text");
   if (orbLabel) orbLabel.textContent = currentStatusText;
+
+  // Always save to conversation history so context persists and full tool outputs display
+  const targetSessionId = currentSessionId || null;
+  const saveHistory = true;
 
   // Call Python API
   window.pywebview.api.send_message(userText, targetSessionId, attachmentsToSend, isVoice, saveHistory).catch((err) => {
@@ -1327,79 +1326,11 @@ function setOrbListening(active) {
 }
 
 // Hardware Microphone & Voice Input Controller (Groq Whisper Bridge)
-// ========================================================
-// Option B: Realtime Live Speech API & Voice Transmission Bridge
-// ========================================================
 let isNativeRecording = false;
 let recordingAutoStopTimer = null;
 let transcriptionSafetyTimer = null;
-let webSpeechRecognizer = null;
-let webSpeechActive = false;
-let webSpeechFinalReceived = false;
 let lastProcessedVoiceText = "";
 let lastVoiceProcessedTime = 0;
-
-function setupWebSpeech() {
-  if (('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window)) {
-    try {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      webSpeechRecognizer = new SpeechRecognition();
-      webSpeechRecognizer.continuous = false;
-      webSpeechRecognizer.interimResults = true;
-      webSpeechRecognizer.lang = 'en-US';
-
-      webSpeechRecognizer.onstart = function() {
-        webSpeechActive = true;
-        webSpeechFinalReceived = false;
-      };
-
-      webSpeechRecognizer.onresult = function(event) {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-
-        const displayText = (finalTranscript || interimTranscript).trim();
-        if (displayText) {
-          const chatInput = document.getElementById("chat-input");
-          if (chatInput) {
-            chatInput.value = displayText;
-          }
-          showOrbSubtitle(displayText);
-        }
-
-        if (finalTranscript && finalTranscript.trim()) {
-          webSpeechFinalReceived = true;
-          if (isNativeRecording) {
-            stopRecordingUI();
-            setOrbListening(false);
-            isNativeRecording = false;
-            if (window.pywebview && window.pywebview.api && window.pywebview.api.stop_voice_recording) {
-              window.pywebview.api.stop_voice_recording();
-            }
-          }
-          window.onVoiceTranscribed(finalTranscript.trim());
-        }
-      };
-
-      webSpeechRecognizer.onerror = function(err) {
-        webSpeechActive = false;
-      };
-
-      webSpeechRecognizer.onend = function() {
-        webSpeechActive = false;
-      };
-    } catch (e) {
-      webSpeechRecognizer = null;
-    }
-  }
-}
 
 // Asynchronous callback pushed when background recording thread finishes initialization
 window.onVoiceRecordingStarted = function(status) {
@@ -1473,22 +1404,12 @@ function toggleRecording() {
   const chatInput = document.getElementById("chat-input");
 
   if (!isNativeRecording) {
-    // Start Recording from hardware microphone & Web Speech API
+    // Start Recording from hardware microphone
     isNativeRecording = true;
     if (micBtn) micBtn.classList.add("listening");
     setOrbListening(true);
     if (chatInput) {
       chatInput.placeholder = "🎙️ Listening... Speak now (Click mic or press Enter to send)";
-    }
-
-    if (!webSpeechRecognizer) {
-      setupWebSpeech();
-    }
-    if (webSpeechRecognizer) {
-      try {
-        webSpeechFinalReceived = false;
-        webSpeechRecognizer.start();
-      } catch (e) {}
     }
 
     if (window.pywebview && window.pywebview.api && window.pywebview.api.start_voice_recording) {
@@ -1503,20 +1424,17 @@ function toggleRecording() {
       });
     }
 
-    // Auto-stop after 4 seconds if user forgets to click stop
+    // Auto-stop after 10 seconds if user forgets to click stop
     clearTimeout(recordingAutoStopTimer);
     recordingAutoStopTimer = setTimeout(() => {
       if (isNativeRecording) {
         toggleRecording();
       }
-    }, 4000);
+    }, 10000);
 
   } else {
     // Stop Recording & Transcribe asynchronously on background thread
     clearTimeout(recordingAutoStopTimer);
-    if (webSpeechRecognizer && webSpeechActive) {
-      try { webSpeechRecognizer.stop(); } catch (e) {}
-    }
     stopRecordingUI();
     setOrbListening(false);
     if (chatInput) {
