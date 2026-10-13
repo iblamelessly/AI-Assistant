@@ -101,6 +101,36 @@ class MicrophoneEngine:
     def is_available(self) -> bool:
         return AUDIO_SUPPORTED
 
+    @staticmethod
+    def ensure_system_unmuted():
+        """
+        Safeguard: Checks Windows Core Audio endpoints and ensures
+        the system microphone is unmuted and has an adequate recording volume.
+        Prevents hardware mute button or Windows settings from blocking audio capture.
+        """
+        try:
+            import comtypes
+            comtypes.CoInitialize()
+            try:
+                from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+                from ctypes import cast, POINTER
+                from comtypes import CLSCTX_ALL
+                mic = AudioUtilities.GetMicrophone()
+                if mic:
+                    endpoint = mic.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                    vol = cast(endpoint, POINTER(IAudioEndpointVolume))
+                    if vol.GetMute():
+                        vol.SetMute(0, None)
+                        print("[MicrophoneEngine] System microphone was muted in Windows. Automatically unmuted it.")
+                    scalar = vol.GetMasterVolumeLevelScalar()
+                    if scalar < 0.30:
+                        vol.SetMasterVolumeLevelScalar(0.85, None)
+                        print(f"[MicrophoneEngine] Boosted low microphone volume to 85% (was {scalar*100:.0f}%).")
+            finally:
+                comtypes.CoUninitialize()
+        except Exception:
+            pass
+
     def _trigger_auto_stop(self):
         """Dispatched when silence is detected after user speech or timeout occurs."""
         with self._lock:
@@ -118,6 +148,9 @@ class MicrophoneEngine:
         """Starts recording audio from default microphone with dynamic VAD silence detection."""
         if not AUDIO_SUPPORTED:
             return False
+
+        # Ensure hardware/OS microphone is unmuted before opening audio stream
+        self.ensure_system_unmuted()
 
         with self._lock:
             if self.is_recording:
@@ -149,8 +182,8 @@ class MicrophoneEngine:
                                 self._ambient_level = max(0.005, float(np.mean(self._ambient_samples)))
                             return
 
-                        # Natural human voice threshold: must distinctly exceed ambient noise
-                        voice_threshold = max(0.020, self._ambient_level * 1.8)
+                        # Natural human voice threshold: responsive to subtle and quiet speech
+                        voice_threshold = max(0.012, self._ambient_level * 1.35)
                         if rms > voice_threshold:
                             self._speech_frame_count += 1
                             if self._speech_frame_count >= 2:
@@ -202,8 +235,8 @@ class MicrophoneEngine:
 
             # Balanced Automatic Gain Control (AGC) for quiet microphones without blowing out noise:
             peak = float(np.max(np.abs(audio_data)))
-            if 0.005 < peak < 0.5:
-                gain = min(5.0, 0.70 / peak)
+            if 0.003 < peak < 0.6:
+                gain = min(6.0, 0.70 / peak)
                 audio_data = audio_data * gain
 
             buf = io.BytesIO()
