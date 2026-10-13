@@ -1723,7 +1723,15 @@ function setupEventListeners() {
   if (orbDismissBtn) {
     orbDismissBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      hideVoiceOrb();
+      if (isMiniModeActive) {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.minimize_window) {
+          window.pywebview.api.minimize_window();
+        } else {
+          hideVoiceOrb();
+        }
+      } else {
+        hideVoiceOrb();
+      }
     });
   }
 
@@ -1847,6 +1855,10 @@ function setupEventListeners() {
     } else if (e.key === "Escape") {
       if (isStreaming) {
         window.emergencyStop();
+      } else if (isMiniModeActive) {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.minimize_window) {
+          window.pywebview.api.minimize_window();
+        }
       }
     }
   });

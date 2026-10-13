@@ -2324,7 +2324,7 @@ body.mini-mode {
 body.mini-mode .jarvis-robot-orb,
 body.mini-mode .jarvis-voice-orb {
   position: static !important;
-  transform: scale(1.08) !important;
+  transform: scale(0.88) !important;
   opacity: 1 !important;
   pointer-events: all !important;
   display: flex !important;
@@ -2334,13 +2334,19 @@ body.mini-mode .jarvis-voice-orb {
   margin: 0 auto !important;
 }
 
+body.mini-mode .orb-label {
+  position: static !important;
+  margin-top: 4px !important;
+  bottom: auto !important;
+}
+
 body.mini-mode .orb-subtitle-card {
   position: static !important;
   transform: none !important;
   margin-top: 10px !important;
   max-width: 320px !important;
   width: 94% !important;
-  max-height: 90px !important;
+  max-height: 55px !important;
   overflow-y: auto !important;
   pointer-events: auto !important;
   padding: 8px 12px !important;

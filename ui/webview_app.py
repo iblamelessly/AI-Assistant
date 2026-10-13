@@ -255,12 +255,17 @@ class AssistantApi:
                 if hwnd:
                     user32 = ctypes.windll.user32
                     user32.ShowWindow(hwnd, 9)  # SW_RESTORE: ensures window is restored from minimized/taskbar state
-                    screen_w = user32.GetSystemMetrics(0)
-                    screen_h = user32.GetSystemMetrics(1)
-                    target_w = 360
-                    target_h = 260
-                    target_x = max(0, screen_w - target_w - 24)
-                    target_y = max(0, screen_h - target_h - 60)
+                    # Use Work Area (excludes taskbar) for proper positioning
+                    import ctypes
+                    class RECT(ctypes.Structure):
+                        _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long),
+                                    ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
+                    work_rect = RECT()
+                    user32.SystemParametersInfoW(48, 0, ctypes.byref(work_rect), 0)  # SPI_GETWORKAREA = 48
+                    target_w = 340
+                    target_h = 240
+                    target_x = max(10, work_rect.right - target_w - 20)
+                    target_y = max(10, work_rect.bottom - target_h - 20)
                     HWND_TOPMOST = -1
                     SWP_SHOWWINDOW = 0x0040
                     user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, target_w, target_h, SWP_SHOWWINDOW)
@@ -322,6 +327,18 @@ class AssistantApi:
                 self.toggle_mini_mode(False)
         except Exception as e:
             print(f"[AssistantApi] restore_and_focus error: {e}")
+
+    def minimize_window(self):
+        """Minimizes the JARVIS window to the Windows taskbar."""
+        try:
+            import ctypes
+            hwnd = self._get_hwnd()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE = 6
+                return True
+        except Exception as e:
+            print(f"[AssistantApi] minimize_window error: {e}")
+        return False
 
     def trigger_voice_toggle(self):
         """Toggles hardware microphone listening on/off with instant audible feedback."""
@@ -655,42 +672,6 @@ def start_desktop_app():
     )
 
     api.set_window(window)
-
-    def on_window_minimized():
-        """Triggered automatically when the window is minimized.
-        Minimize-to-mini: keeps the Floating Mini Robot visible on screen instead of disappearing!
-        """
-        def _to_mini():
-            time.sleep(0.04)
-            api.toggle_mini_mode(True)
-            if api._window:
-                try:
-                    api._window.evaluate_js("if (window.setMiniModeUI) { window.setMiniModeUI(true); }")
-                except Exception:
-                    pass
-        threading.Thread(target=_to_mini, daemon=True).start()
-
-    window.events.minimized += on_window_minimized
-
-    def _minimize_watcher():
-        import ctypes
-        user32 = ctypes.windll.user32
-        time.sleep(1.5)
-        while True:
-            time.sleep(0.2)
-            try:
-                hwnd = api._get_hwnd()
-                if hwnd and user32.IsIconic(hwnd):
-                    api.toggle_mini_mode(True)
-                    if api._window:
-                        try:
-                            api._window.evaluate_js("if (window.setMiniModeUI) { window.setMiniModeUI(true); }")
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
-    threading.Thread(target=_minimize_watcher, daemon=True).start()
 
     try:
         from core.tray import SystemTrayManager
