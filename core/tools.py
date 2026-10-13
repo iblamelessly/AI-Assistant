@@ -45,6 +45,75 @@ VK_VOLUME_UP   = 0xAF
 class AssistantTools:
     """Executes full laptop and system automation tools for Jarvis AI Assistant."""
 
+    _python_repl = None
+    _powershell_repl = None
+
+    @classmethod
+    def get_python_repl(cls):
+        """Returns or creates the stateful Python REPL instance."""
+        if cls._python_repl is None or not cls._python_repl.is_alive():
+            from core.repl_executor import PersistentREPL
+            cls._python_repl = PersistentREPL(lang="python", timeout=30)
+        return cls._python_repl
+
+    @classmethod
+    def get_powershell_repl(cls):
+        """Returns or creates the stateful PowerShell REPL instance."""
+        if cls._powershell_repl is None or not cls._powershell_repl.is_alive():
+            from core.repl_executor import PersistentREPL
+            cls._powershell_repl = PersistentREPL(lang="powershell", timeout=30)
+        return cls._powershell_repl
+
+    @classmethod
+    def run_python_code(cls, code: str, timeout: int = 30) -> dict:
+        """
+        Executes arbitrary Python code in a stateful persistent REPL session (Open Interpreter LMC).
+        Variables, functions, imports, and directory changes persist across calls.
+        """
+        if not code or not code.strip():
+            return {"success": False, "error": "Empty code snippet provided"}
+        try:
+            repl = cls.get_python_repl()
+            res = repl.execute(code, timeout=timeout)
+            out = res.get("stdout", "").strip()
+            err = res.get("stderr", "").strip()
+            is_ok = res.get("success", False)
+            summary = out or err or "Python code executed successfully with no output."
+            return {
+                "success": is_ok,
+                "stdout": out,
+                "stderr": err,
+                "returncode": res.get("returncode", 0),
+                "summary": f"Python Output:\n{summary}" if is_ok else f"Python Error:\n{err or summary}"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "summary": f"Python REPL error: {e}"}
+
+    @classmethod
+    def run_powershell_code(cls, code: str, timeout: int = 30) -> dict:
+        """
+        Executes arbitrary PowerShell script in a stateful persistent REPL session.
+        Variables, functions, and working directory state persist across calls.
+        """
+        if not code or not code.strip():
+            return {"success": False, "error": "Empty PowerShell snippet provided"}
+        try:
+            repl = cls.get_powershell_repl()
+            res = repl.execute(code, timeout=timeout)
+            out = res.get("stdout", "").strip()
+            err = res.get("stderr", "").strip()
+            is_ok = res.get("success", False)
+            summary = out or err or "PowerShell script executed successfully with no output."
+            return {
+                "success": is_ok,
+                "stdout": out,
+                "stderr": err,
+                "returncode": res.get("returncode", 0),
+                "summary": f"PowerShell Output:\n{summary}" if is_ok else f"PowerShell Error:\n{err or summary}"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "summary": f"PowerShell REPL error: {e}"}
+
     @staticmethod
     def run_shell_command(command: str, cwd: str = None, timeout: int = 60) -> dict:
         """
@@ -792,7 +861,11 @@ class AssistantTools:
         elif t in ["generate_ai_video", "generate_video", "create_video", "ai_video", "text_to_video"]:
             return cls.generate_ai_video(arg0)
 
-        if t in ["run_command", "run_shell_command", "terminal", "bash", "powershell", "shell"]:
+        if t in ["run_python_code", "python_code", "run_python", "python", "py"]:
+            return cls.run_python_code(arg0)
+        elif t in ["run_powershell_code", "powershell_code", "run_pwsh", "pwsh"]:
+            return cls.run_powershell_code(arg0)
+        elif t in ["run_command", "run_shell_command", "terminal", "bash", "powershell", "shell"]:
             return cls.run_shell_command(arg0)
         elif t in ["read_file", "view_file"]:
             return cls.read_file(arg0)

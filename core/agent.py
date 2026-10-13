@@ -14,6 +14,8 @@ Mandatory safety controls:
 
 import os
 import time
+import json
+import re
 import threading
 import psutil
 from typing import Dict, Any, List, Optional, Callable
@@ -21,6 +23,7 @@ from typing import Dict, Any, List, Optional, Callable
 from core.tool_registry import ToolRegistry
 from core.planner import TaskPlanner, TaskPlan, TaskStep
 from core.permissions import PermissionGuard
+from core.package_resolver import PackageResolver
 
 
 class AgentState:
@@ -178,24 +181,59 @@ class AgentController:
 
             if not verification["verified"]:
                 consecutive_failures += 1
-                emit_status(f"Step {step_idx} Verification Failed", "analyzing", f"Issue: {verification['reason']}. Attempting recovery...")
+                failure_reason = verification.get("reason", "Action failed")
+                error_output = str(action_result.get("stderr") or action_result.get("error") or failure_reason)
+                emit_status(f"Step {step_idx} Verification Failed", "analyzing", f"Issue: {failure_reason}. Inspecting failure...")
 
-                # Recovery attempt if repeated failures < 3
-                if consecutive_failures >= 3:
-                    self.current_state = AgentState.ERROR
-                    err_msg = f"Task aborted: Step {step_idx} failed repeatedly ({verification['reason']})."
-                    emit_status("Task Aborted", "error", err_msg)
-                    if on_complete:
-                        on_complete(err_msg, self._execution_log)
-                    return {"success": False, "summary": err_msg, "log": self._execution_log}
+                # ── Phase 1: Auto-Dependency & Missing Binary Resolution ──
+                dependency_fixed = False
+                res_info = PackageResolver.auto_resolve(error_output)
+                if res_info.get("resolved"):
+                    emit_status(
+                        f"Auto-resolved dependency: {res_info.get('package')}",
+                        "executing",
+                        f"Installed missing {res_info.get('method')} package. Re-executing step {step_idx}..."
+                    )
+                    self._log_event("dependency_resolved", res_info)
+                    time.sleep(0.5)
+                    retry_res = self.tool_registry.execute_tool(step.tool, **step.params)
+                    retry_ver = self._verify_step(step, retry_res)
+                    if retry_ver["verified"]:
+                        action_result = retry_res
+                        verification = retry_ver
+                        consecutive_failures = 0
+                        dependency_fixed = True
+                        emit_status(f"Step {step_idx} Recovered", "executing", f"Step succeeded after dependency install.")
 
-                # Fallback action: brief pause and retry step
-                time.sleep(1.0)
-                retry_res = self.tool_registry.execute_tool(step.tool, **step.params)
-                retry_ver = self._verify_step(step, retry_res)
-                if not retry_ver["verified"]:
-                    # Continue or report failure
-                    pass
+                # ── Phase 2: LLM Self-Healing Diagnosis & Code Repair ──
+                if not dependency_fixed and consecutive_failures < 3:
+                    emit_status(
+                        f"Self-Healing Step {step_idx}...",
+                        "thinking",
+                        f"Diagnosing traceback and auto-repairing {step.tool} parameters..."
+                    )
+                    healed_params = self._diagnose_and_repair_step(step, error_output, goal)
+                    if healed_params:
+                        step.params = healed_params
+                        self._log_event("step_self_healed", {"step_idx": step_idx, "new_params": healed_params})
+                        emit_status(f"Applying Self-Healed Fix...", "executing", f"Re-executing corrected {step.tool}...")
+                        retry_res = self.tool_registry.execute_tool(step.tool, **step.params)
+                        retry_ver = self._verify_step(step, retry_res)
+                        if retry_ver["verified"]:
+                            action_result = retry_res
+                            verification = retry_ver
+                            consecutive_failures = 0
+                            emit_status(f"Step {step_idx} Self-Healed Successfully!", "executing", "Recovery verified.")
+
+                # ── Phase 3: Final check after self-healing attempts ──
+                if not verification["verified"]:
+                    if consecutive_failures >= 3:
+                        self.current_state = AgentState.ERROR
+                        err_msg = f"Task aborted: Step {step_idx} failed repeatedly ({verification['reason']})."
+                        emit_status("Task Aborted", "error", err_msg)
+                        if on_complete:
+                            on_complete(err_msg, self._execution_log)
+                        return {"success": False, "summary": err_msg, "log": self._execution_log}
             else:
                 consecutive_failures = 0
 
@@ -274,6 +312,68 @@ class AgentController:
 
         # Default: Tool success flag
         return {"verified": bool(action_result.get("success", True)), "detail": action_result.get("summary", "Action completed.")}
+
+    def _diagnose_and_repair_step(self, step: TaskStep, error_text: str, goal: str) -> Optional[Dict[str, Any]]:
+        """
+        Open Interpreter Self-Healing Engine:
+        Uses LLM intelligence to diagnose tracebacks, errors, or execution failures,
+        and synthesizes repaired parameters/code for the tool.
+        """
+        client = None
+        if hasattr(self.planner, "groq_client") and self.planner.groq_client and self.planner.groq_client.is_configured():
+            client = self.planner.groq_client
+        elif hasattr(self.planner, "gemini_client") and self.planner.gemini_client and self.planner.gemini_client.is_configured():
+            client = self.planner.gemini_client
+
+        if not client:
+            return None
+
+        prompt = f"""You are the JARVIS Autonomous Self-Healing Code & Action Repair Engine.
+A step in an autonomous workflow failed on Windows. Diagnose the failure and provide corrected parameters.
+
+User Goal: "{goal}"
+Failed Step: "{step.description}"
+Tool Name: "{step.tool}"
+Original Parameters:
+{json.dumps(step.params, indent=2)}
+
+Execution Error / Traceback:
+{error_text}
+
+Instructions:
+1. Diagnose why the action failed (syntax error, wrong path, command flag issue, logic bug).
+2. Generate corrected parameter values for the tool '{step.tool}'.
+3. If the tool is 'run_python_code', provide the complete corrected Python code.
+4. If the tool is 'run_powershell_code' or 'run_command', provide the complete corrected script.
+5. Return ONLY a valid JSON dictionary matching the required parameters for this tool.
+
+Output format (raw JSON only, no markdown fences):
+{{
+  "param_name": "corrected_value"
+}}"""
+
+        try:
+            chunks = []
+            if hasattr(client, "stream_chat"):
+                client.stream_chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    on_chunk=lambda c: chunks.append(c),
+                    temperature=0.1,
+                    max_tokens=800,
+                    emit_errors=False
+                )
+            raw = "".join(chunks).strip()
+            raw = re.sub(r"^```json\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"^```\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw).strip()
+
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict) and parsed:
+                return parsed
+        except Exception as e:
+            print(f"[AgentController] Self-healing repair error: {e}")
+
+        return None
 
     def _log_event(self, event_type: str, data: Any):
         self._execution_log.append({

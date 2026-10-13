@@ -159,7 +159,9 @@ class AssistantEngine:
             "- NEVER interpret pronouns like 'it', 'that', or 'this' as literal application or file names.\n\n"
             "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
             "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
-            "- Run terminal/PowerShell: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
+            "- Execute Python script (Stateful REPL / Open Interpreter): [ACTION: run_python_code(\"python_code\")] (variables, imports, and state persist across calls; use this for dynamic file processing, data extraction, script synthesis, or complex OS workflows)\n"
+            "- Execute PowerShell script (Stateful REPL): [ACTION: run_powershell_code(\"powershell_code\")] (variables and state persist across calls)\n"
+            "- Run terminal/PowerShell command: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
             "- Read file: [ACTION: read_file(\"path/to/file\")]\n"
             "- Write file: [ACTION: write_file(\"path/to/file\", \"content\")]\n"
             "- List directory: [ACTION: list_directory(\"path\")]\n"
@@ -1493,7 +1495,9 @@ class AssistantEngine:
                 return
 
             # Execute permitted action
-            if t_name in ["create_presentation", "create_document", "create_pdf", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
+            if t_name in ["run_python_code", "run_powershell_code"]:
+                set_status("Executing Code...", "executing", f"Executing code in stateful {t_name} REPL...")
+            elif t_name in ["create_presentation", "create_document", "create_pdf", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
                 set_status("Creating...", "creating", f"Creating content with {t_name}...")
             elif t_name in ["search_files", "search_folders", "web_search", "inspect_media", "read_file", "list_directory"]:
                 set_status("Analyzing...", "analyzing", f"Inspecting system data with {t_name}...")

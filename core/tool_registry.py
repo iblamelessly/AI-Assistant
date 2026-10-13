@@ -409,7 +409,25 @@ class ToolRegistry:
             handler=lambda file_path: AssistantTools.reveal_in_explorer(file_path)
         ))
 
-        # ── 5. Terminal Tools ──────────────────────────
+        # ── 5. Terminal & Code Execution Tools ──────────
+        self.register(ToolDefinition(
+            name="run_python_code",
+            description="Executes arbitrary Python code in a stateful persistent REPL session. Variables, imports, and state persist across calls (Open Interpreter LMC).",
+            category="development",
+            risk_level="medium",
+            parameters={"code": {"type": "str"}, "timeout": {"type": "int", "default": 30}},
+            handler=lambda code, timeout=30: AssistantTools.run_python_code(code, timeout=timeout)
+        ))
+
+        self.register(ToolDefinition(
+            name="run_powershell_code",
+            description="Executes arbitrary PowerShell script in a stateful persistent REPL session. Variables and state persist across calls.",
+            category="terminal",
+            risk_level="medium",
+            parameters={"code": {"type": "str"}, "timeout": {"type": "int", "default": 30}},
+            handler=lambda code, timeout=30: AssistantTools.run_powershell_code(code, timeout=timeout)
+        ))
+
         self.register(ToolDefinition(
             name="run_command",
             description="Executes a PowerShell / shell command on the laptop with output capture.",
