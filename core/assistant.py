@@ -157,8 +157,10 @@ class AssistantEngine:
             "9. Conversational Continuity & Pronoun Resolution: Always maintain deep continuity with the conversation history. When the user uses pronouns or implicit references ('it', 'that', 'this', 'them', 'the file', 'the image', 'the document', 'the presentation', 'open it', 'delete it', 'explain that'):\n"
             "- Resolve the pronoun to the specific file, code, topic, media, or action discussed in preceding turns.\n"
             "- NEVER interpret pronouns like 'it', 'that', or 'this' as literal application or file names.\n\n"
-            "AUTONOMOUS ACTIONS & LAPTOP TOOLS:\n"
-            "When performing laptop tasks, include the corresponding [ACTION: ...] tag:\n"
+            "AUTONOMOUS ACTIONS & LIVE OS OPERATIONS (OPEN INTERPRETER ENGINE):\n"
+            "To perform ANY operation outside the app on the user's laptop, YOU MUST emit either an [ACTION: ...] tag OR a runnable code block (```powershell or ```python). "
+            "NEVER merely state that you did an action without emitting the executable code or action tag. If no code or action tag is emitted, the action CANNOT happen.\n"
+            "Tags available:\n"
             "- Execute Python script (Stateful REPL / Open Interpreter): [ACTION: run_python_code(\"python_code\")] (variables, imports, and state persist across calls; use this for dynamic file processing, data extraction, script synthesis, or complex OS workflows)\n"
             "- Execute PowerShell script (Stateful REPL): [ACTION: run_powershell_code(\"powershell_code\")] (variables and state persist across calls)\n"
             "- Run terminal/PowerShell command: [ACTION: run_command(\"powershell_command\")] (e.g. git status, dir, python script.py)\n"
@@ -188,10 +190,30 @@ class AssistantEngine:
                 "- The user is talking directly to you via voice in real-time hands-free conversation.\n"
                 "- Reply verbally in 1 to 3 punchy, crisp, natural conversational sentences.\n"
                 "- Be articulate, charming, and sharp as Tony Stark's JARVIS.\n"
-                "- DO NOT output markdown headers, bullet lists, markdown asterisks, or code blocks — this is spoken auditory conversation.\n"
-                "- If executing an action or creating something, state the confirmation warmly and concisely in one spoken sentence (e.g. 'Opening YouTube for you now, sir.' or 'I have prepared the presentation on your screen, sir.').\n"
+                "- CRITICAL: When the user asks to perform an action (open app, search web, change volume, run code, create files), YOU MUST append the [ACTION: ...] tag or executable code block at the very end of your response so the system performs the live operation on the laptop while you speak!\n"
+                "- State your confirmation warmly and concisely (e.g. 'Opening that for you now, sir.' [ACTION: open_app(\"notepad\")]).\n"
             )
         return prompt
+
+    @staticmethod
+    def _parse_action_arguments(raw_args: str) -> list:
+        """Parses action parameters robustly, supporting escaped quotes and Windows paths."""
+        if not raw_args or not raw_args.strip():
+            return []
+        s = raw_args.strip()
+        args = []
+        pattern = re.compile(r'\s*(?:,\s*)?(?:"((?:\\.|[^"\\])*)"|\'((?:\\.|[^\'\\])*)\'|([^,]+))')
+        for match in pattern.finditer(s):
+            dq, sq, uq = match.group(1), match.group(2), match.group(3)
+            if dq is not None:
+                args.append(dq.replace(r'\"', '"'))
+            elif sq is not None:
+                args.append(sq.replace(r"\'", "'"))
+            elif uq is not None:
+                cleaned = uq.strip()
+                if cleaned:
+                    args.append(cleaned)
+        return args
 
     def _detect_media_intent(self, msg: str, raw_msg: str):
         """Detects image or video editing requests on the fast path."""
@@ -1469,15 +1491,12 @@ class AssistantEngine:
                 return
 
         # 7. Parse autonomous actions emitted by the model
-        action_pattern = re.compile(r"\[(?:ACTION|TOOL):\s*(\w+)\((.*?)\)\]")
+        action_pattern = re.compile(r"\[(?:ACTION|TOOL):\s*(\w+)\(([\s\S]*?)\)\]", re.IGNORECASE)
         for match in action_pattern.finditer(full_response):
             t_name = match.group(1).strip()
             raw_args = match.group(2).strip()
 
-            args = []
-            for a in re.findall(r'"([^"]*)"|\'([^\']*)\'|([^,]+)', raw_args):
-                val = a[0] or a[1] or a[2]
-                args.append(val.strip())
+            args = self._parse_action_arguments(raw_args)
 
             # Inspect action with Permission Guard
             inspection = self.permission_guard.inspect_action(t_name, *args)
@@ -1567,6 +1586,33 @@ class AssistantEngine:
             if on_tool:
                 on_tool(tool_action_performed)
 
+            if t_result and (t_name in ["run_command", "run_python_code", "run_powershell_code", "run_shell_command"]):
+                out_text = t_result.get("stdout") or t_result.get("summary") or t_result.get("stderr")
+                if out_text and "**Output:**" not in full_response:
+                    full_response += f"\n\n**Output:**\n```\n{out_text}\n```"
+
+        # 7.5 Open Interpreter Architecture: Auto-execute code blocks if no action tag matched
+        if not tool_action_performed:
+            code_block_match = re.search(r"```(python|py|powershell|pwsh|cmd|bat|bash|sh)\s*\n([\s\S]*?)```", full_response, re.IGNORECASE)
+            if code_block_match:
+                lang = code_block_match.group(1).lower()
+                code_snippet = code_block_match.group(2).strip()
+                if code_snippet:
+                    if lang in ["python", "py"]:
+                        set_status("Executing Python...", "executing", "Running synthesized Python code in stateful REPL...")
+                        exec_res = AssistantTools.run_python_code(code_snippet)
+                        t_name = "run_python_code"
+                    else:
+                        set_status("Executing PowerShell...", "executing", "Running synthesized PowerShell in stateful REPL...")
+                        exec_res = AssistantTools.run_powershell_code(code_snippet)
+                        t_name = "run_powershell_code"
+                    tool_action_performed = {"tool": t_name, "param": code_snippet[:60], "result": exec_res}
+                    if on_tool:
+                        on_tool(tool_action_performed)
+                    out_text = exec_res.get("summary") or exec_res.get("stdout") or exec_res.get("stderr")
+                    if out_text and "**Output:**" not in full_response:
+                        full_response += f"\n\n**Output:**\n```\n{out_text}\n```"
+
         # 8. Clean response for display
         clean_display = action_pattern.sub("", full_response).strip()
         if not clean_display and tool_action_performed:
@@ -1584,6 +1630,10 @@ class AssistantEngine:
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
             try:
                 speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
+                speech_text = re.sub(r"```[\s\S]*?```", "", speech_text).strip()
+                speech_text = re.sub(r"\*\*Output:\*\*[\s\S]*", "", speech_text).strip()
+                if not speech_text:
+                    speech_text = "I have executed the operation for you, sir."
                 audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
             except Exception as e:
                 print(f"[AssistantEngine] Voice synthesis error: {e}")

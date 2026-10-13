@@ -1345,6 +1345,11 @@ window.onVoiceRecordingStarted = function(status) {
 // Asynchronous callback pushed from Python background worker thread
 window.onVoiceTranscribed = function(transcribedText) {
   clearTimeout(transcriptionSafetyTimer);
+  clearTimeout(recordingAutoStopTimer);
+  isNativeRecording = false;
+  stopRecordingUI();
+  setOrbListening(false);
+
   const chatInput = document.getElementById("chat-input");
   const defaultPlaceholder = "Ask Jarvis, give a voice command, or run any laptop task... (Shift + Enter for new line)";
   if (chatInput) {
