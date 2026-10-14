@@ -1003,7 +1003,13 @@ window.onStatusUpdate = function(statusText, statusType, detailText) {
   currentStatusDetail = detailText || "";
 
   const orbLabel = document.getElementById("orb-status-text");
-  if (orbLabel) orbLabel.textContent = currentStatusText;
+  if (orbLabel) {
+    if (document.body.classList.contains("mini-mode")) {
+      orbLabel.textContent = isStreaming ? "⚡ Executing..." : "🎙️ Listening...";
+    } else {
+      orbLabel.textContent = currentStatusText;
+    }
+  }
 
   if (currentAssistantBubble) {
     const existingCard = currentAssistantBubble.querySelector("#current-activity-card");
@@ -1120,33 +1126,34 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
   }
 
   // Speak back response ONLY when user interacted via voice or mini robot, keeping text chat 100% silent
+  const isLiveVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
   if (isVoice && audioB64) {
     playSpeech(audioB64, fullResponse, () => {
-      hideOrbSubtitle(2500);
-      if (continuousListen && voiceConversationMode) {
+      hideOrbSubtitle(1800);
+      if (isLiveVoice) {
         setTimeout(() => {
-          if (!isStreaming && !isNativeRecording && voiceConversationMode) {
+          if (!isStreaming && !isNativeRecording) {
             setOrbListening(true);
             toggleRecording();
           }
-        }, 350);
+        }, 150);
       } else {
         const label = document.getElementById("orb-status-text");
-        if (label) label.textContent = "Press Ctrl+J or tap robot to talk";
+        if (label) label.textContent = "Tap robot to talk";
       }
     });
   } else if (isVoice) {
-    hideOrbSubtitle(2000);
-    if (continuousListen && voiceConversationMode) {
+    hideOrbSubtitle(1500);
+    if (isLiveVoice) {
       setTimeout(() => {
-        if (!isStreaming && !isNativeRecording && voiceConversationMode) {
+        if (!isStreaming && !isNativeRecording) {
           setOrbListening(true);
           toggleRecording();
         }
-      }, 350);
+      }, 150);
     } else {
       const label = document.getElementById("orb-status-text");
-      if (label) label.textContent = "Press Ctrl+J or tap robot to talk";
+      if (label) label.textContent = "Tap robot to talk";
     }
   }
 
@@ -1180,11 +1187,16 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
 };
 
 // Send Message with dynamic activity status initialization
-function sendMessage() {
+function sendMessage(overrideText) {
   const input = document.getElementById("chat-input");
-  const text = input.value.trim();
+  const text = (overrideText !== undefined ? overrideText : input.value).trim();
   const hasAttachments = pendingAttachments.length > 0;
-  if ((!text && !hasAttachments) || isStreaming) return;
+  if (!text && !hasAttachments) return;
+
+  if (isStreaming) {
+    if (window.emergencyStop) window.emergencyStop();
+    isStreaming = false;
+  }
 
   const userText = text || (hasAttachments ? (pendingAttachments[0].type === "image" ? "Please inspect and display this image." : "Please inspect and display this video.") : "");
   input.value = "";
@@ -1227,12 +1239,12 @@ function sendMessage() {
   currentStreamBuffer = "";
 
   if (isVoice) {
-    showVoiceOrb(currentStatusText);
-    showOrbSubtitle("JARVIS is thinking...");
+    showVoiceOrb(document.body.classList.contains("mini-mode") ? "⚡ Working on it..." : currentStatusText);
+    showOrbSubtitle("Working on it...");
   }
 
   const orbLabel = document.getElementById("orb-status-text");
-  if (orbLabel) orbLabel.textContent = currentStatusText;
+  if (orbLabel) orbLabel.textContent = document.body.classList.contains("mini-mode") ? "⚡ Working on it..." : currentStatusText;
 
   // Always save to conversation history so context persists and full tool outputs display
   const targetSessionId = currentSessionId || null;
@@ -1247,7 +1259,26 @@ function sendMessage() {
     isStreaming = false;
     document.getElementById("btn-send").disabled = false;
   });
+
+  if (isVoice) {
+    // Keep continuous voice listening alive in background so the user can speak commands or corrections anytime
+    setTimeout(() => {
+      if (!isNativeRecording) {
+        toggleRecording();
+      }
+    }, 450);
+  }
 }
+
+window.startListening = function() {
+  voiceConversationMode = true;
+  continuousListen = true;
+  showVoiceOrb("🎙️ Listening...");
+  setOrbListening(true);
+  if (!isNativeRecording) {
+    toggleRecording();
+  }
+};
 
 // ── FLOATING MINI JARVIS VOICE ORB CONTROLLER ──────────────────────────
 let isAlwaysOnTopPinned = false;
@@ -1291,7 +1322,15 @@ window.setMiniModeUI = function(isMini) {
   if (isMini) {
     document.body.classList.add("mini-mode");
     if (toggleBtn) toggleBtn.classList.add("active");
-    showVoiceOrb("Mini Robot ready — press Ctrl+J or tap to talk");
+    voiceConversationMode = true;
+    continuousListen = true;
+    showVoiceOrb("🎙️ Listening...");
+    setOrbListening(true);
+    setTimeout(() => {
+      if (!isNativeRecording && !isStreaming) {
+        toggleRecording();
+      }
+    }, 150);
   } else {
     document.body.classList.remove("mini-mode");
     if (toggleBtn) toggleBtn.classList.remove("active");
@@ -1358,7 +1397,7 @@ window.onVoiceTranscribed = function(transcribedText) {
 
   const cleanText = (transcribedText || "").trim();
   const now = Date.now();
-  if (cleanText && cleanText.toLowerCase() === lastProcessedVoiceText.toLowerCase() && (now - lastVoiceProcessedTime) < 2500) {
+  if (cleanText && cleanText.toLowerCase() === lastProcessedVoiceText.toLowerCase() && (now - lastVoiceProcessedTime) < 2000) {
     return; // Ignore duplicate from dual-engine pipeline
   }
 
@@ -1367,34 +1406,48 @@ window.onVoiceTranscribed = function(transcribedText) {
     lastVoiceProcessedTime = now;
 
     if (isStreaming) {
-      // User spoke another command while Jarvis is still processing the previous one!
-      console.log("Queuing command while processing:", cleanText);
-      pendingCommandQueue.push(cleanText);
-      showOrbSubtitle(`Queued next command: "${cleanText}"`);
-      const label = document.getElementById("orb-status-text");
-      if (label) label.textContent = `Queued (${pendingCommandQueue.length}): ${cleanText.substring(0, 20)}...`;
-      return;
+      const lower = cleanText.toLowerCase();
+      // If user says "stop", "cancel", "no", "wait", "hold on"
+      const isStop = lower === "stop" || lower === "cancel" || lower === "abort" || lower === "halt" || lower === "wait";
+      if (isStop) {
+        if (window.emergencyStop) window.emergencyStop();
+        isStreaming = false;
+        showOrbSubtitle("Operation stopped, sir.");
+        const label = document.getElementById("orb-status-text");
+        if (label) label.textContent = "🎙️ Listening to you...";
+        setTimeout(() => {
+          if (!isNativeRecording) toggleRecording();
+        }, 200);
+        return;
+      }
+
+      // Interrupt slow running task in background with user's new command / correction
+      console.log("Interrupting active operation with correction/new command:", cleanText);
+      if (window.emergencyStop) window.emergencyStop();
+      isStreaming = false;
     }
+
     if (chatInput) {
       chatInput.value = cleanText;
       chatInput.style.height = "auto";
       chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + "px";
     }
     const label = document.getElementById("orb-status-text");
-    if (label) label.textContent = "Processing command...";
-    sendMessage();
+    if (label) label.textContent = document.body.classList.contains("mini-mode") ? "⚡ Working on it..." : "Processing command...";
+    sendMessage(cleanText);
   } else {
-    // Silence or background noise filtered out — seamlessly continue listening if in hands-free live voice mode
+    // Silence or background noise filtered out — seamlessly continue listening in live voice mode
     const isLiveVoice = Boolean(voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"));
-    if (isLiveVoice && continuousListen && !isStreaming) {
+    if (isLiveVoice) {
       stopRecordingUI();
       const label = document.getElementById("orb-status-text");
       if (label) label.textContent = "🎙️ Listening to you...";
       setTimeout(() => {
-        if (!isStreaming && !isNativeRecording && (voiceConversationMode || document.body.classList.contains("voice-mode") || document.body.classList.contains("mini-mode"))) {
+        if (!isNativeRecording) {
+          setOrbListening(true);
           toggleRecording();
         }
-      }, 250);
+      }, 150);
     } else {
       const label = document.getElementById("orb-status-text");
       if (label) label.textContent = "Tap robot to talk";
@@ -1763,7 +1816,11 @@ function setupEventListeners() {
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey && !e.altKey && (e.key === "j" || e.key === "J")) {
       e.preventDefault();
-      toggleRecording();
+      if (!isMiniModeActive) {
+        toggleMiniMode(true);
+      } else {
+        toggleRecording();
+      }
     } else if (e.altKey && (e.key === "j" || e.key === "J")) {
       e.preventDefault();
       const toggleBtn = document.getElementById("btn-toggle-orb");

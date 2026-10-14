@@ -638,45 +638,76 @@ class AssistantEngine:
                 res = app_launcher.resolve_and_search("youtube", yt_topic)
                 return {"tool": "web_search", "param": yt_topic, "result": res}
 
-        # Open YouTube homepage
-        if re.search(r"^(?:please\s+)?(?:open|launch|go\s+to)\s+(?:the\s+)?(?:youtube|you\s*tube|yt)$", msg, re.IGNORECASE):
+        # Clean prefix
+        clean_yt = re.sub(r"^(?:hey\s+)?(?:jarvis,?\s*)?", "", msg).strip()
+
+        # Conversational voice correction handler (e.g. "it's empty hand not empty found", "i said empty hand not empty found")
+        correction_match = re.search(r"^(?:no\s*,?\s*)?(?:it'?s|it is|i said|i meant)\s+(.+?)\s+not\s+(.+)$", clean_yt, re.IGNORECASE)
+        if correction_match:
+            corrected_term = correction_match.group(1).strip()
+            res = app_launcher.resolve_and_search("youtube", corrected_term)
+            return {
+                "tool": "web_search",
+                "param": f"youtube: {corrected_term}",
+                "result": {
+                    "success": True,
+                    "platform": "YouTube",
+                    "query": corrected_term,
+                    "action": "web_search",
+                    "summary": f"Understood, corrected to **\"{corrected_term}\"**. Searching YouTube now, sir."
+                }
+            }
+
+        # Open YouTube homepage (e.g. "youtube", "open youtube", "launch youtube", "jarvis, youtube")
+        if clean_yt in ["youtube", "you tube", "yt"] or re.search(r"^(?:please\s+|can\s+you\s+)?(?:open|launch|go\s+to|start)\s+(?:the\s+)?(?:youtube|you\s*tube|yt)$", clean_yt, re.IGNORECASE):
             res = app_launcher.resolve_and_search("youtube", "")
             return {
                 "tool": "web_search",
                 "param": "youtube",
                 "result": {
                     "success": True,
+                    "platform": "YouTube",
+                    "query": "",
                     "action": "open_url",
                     "summary": "Opened YouTube in your browser, sir."
                 }
             }
 
         # Platform-specific deep search (YouTube, Google, Reddit, GitHub, Amazon, Spotify, etc.)
-        # Patterns: "search youtube for lo-fi music", "youtube search python tutorials", "play on spotify chill beats"
+        PLATFORMS_RE = r"youtube|you\s*tube|yt|google|bing|reddit|github|git\s*hub|amazon|amz|linkedin|spotify|twitter|x|instagram|insta|pinterest|pin|stackoverflow|stack|wikipedia|wiki|flipkart|myntra"
+
+        # Pattern A: "search <query> in/on <platform>" or "play <query> on <platform>" or "open <query> in <platform>"
+        # e.g. "search EmptyFound in YouTube", "play empty hand on youtube", "search python on google"
+        search_in_match = re.search(
+            rf"^(?:please\s+|can\s+you\s+)?(?:search|look\s+up|find|play|show|open)\s+(.+?)\s+(?:in|on|at)\s+({PLATFORMS_RE})$",
+            clean_yt, re.IGNORECASE
+        )
+        if search_in_match:
+            query_raw = search_in_match.group(1).strip()
+            platform_raw = search_in_match.group(2).strip()
+            if platform_raw and query_raw:
+                result = app_launcher.resolve_and_search(platform_raw, query_raw)
+                return {"tool": "web_search", "param": f"{platform_raw}: {query_raw}", "result": result}
+
+        # Pattern B: "search on/in <platform> for <query>" or "youtube search <query>"
         search_match = re.search(
-            r"(?:search|look\s+up|find|play|show)\s+"
-            r"(?:on\s+|in\s+|for\s+on\s+|through\s+|via\s+)?"
-            r"(youtube|you\s*tube|yt|google|bing|reddit|github|git\s*hub|amazon|amz|linkedin|"
-            r"spotify|twitter|x|instagram|insta|pinterest|pin|stackoverflow|stack|wikipedia|wiki|flipkart|myntra)"
-            r"(?:\s+for|\s+about)?\s+(.+)"
-            r"|"
-            r"(youtube|you\s*tube|yt|google|bing|reddit|github|git\s*hub|amazon|amz|linkedin|"
-            r"spotify|twitter|x|instagram|insta|pinterest|pin|stackoverflow|stack|wikipedia|wiki|flipkart|myntra)"
-            r"\s+(?:search|find|look\s+up|play|show)\s+(?:for\s+|about\s+)?(.+)",
-            msg, re.IGNORECASE
+            rf"(?:search|look\s+up|find|play|show)\s+(?:on\s+|in\s+|for\s+on\s+|through\s+|via\s+)?({PLATFORMS_RE})(?:\s+for|\s+about)?\s+(.+)"
+            rf"|({PLATFORMS_RE})\s+(?:search|find|look\s+up|play|show)\s+(?:for\s+|about\s+)?(.+)",
+            clean_yt, re.IGNORECASE
         )
         if search_match:
             platform_raw = (search_match.group(1) or search_match.group(3) or "").strip()
             query_raw = (search_match.group(2) or search_match.group(4) or "").strip()
             if platform_raw and query_raw and len(query_raw) > 1:
                 result = app_launcher.resolve_and_search(platform_raw, query_raw)
-                return {"tool": "web_search", "param": query_raw, "result": result}
+                return {"tool": "web_search", "param": f"{platform_raw}: {query_raw}", "result": result}
 
         # File & Folder Intent Detection (e.g. "find my python file main.py", "open downloads folder", "where is test.py")
+        has_web_platform = any(p in clean_yt for p in ["youtube", "you tube", "google", "spotify", "reddit", "github", "amazon"])
         is_creative_command = bool(re.search(r"\b(?:create|createa|generate|make|draw|paint|render|imagine|produce)\s+(?:an?\s+)?(?:ai\s+)?(?:image|photo|picture|video|clip|slideshow|presentation|ppt|pdf|document)\b", msg, re.IGNORECASE))
         parsed_q = file_search_engine.parse_query(msg)
         is_file_folder_query = (
-            not is_creative_command and (
+            not is_creative_command and not has_web_platform and (
                 parsed_q["is_folder"] or
                 bool(parsed_q["extensions"]) or
                 any(w in msg for w in ["file", "folder", "directory", "script", "document"]) or
@@ -709,9 +740,14 @@ class AssistantEngine:
                 }
 
         # Open apps (intelligent case-insensitive search and doubt detection, with fallback to file/folder)
-        open_match = re.search(r"^(?:please\s+)?(?:open|launch|start|run)\s+([a-zA-Z0-9\s._-]+)$", msg)
+        open_match = re.search(r"^(?:please\s+|can\s+you\s+|could\s+you\s+|kindly\s+)?(?:open(?:\s+up)?|launch|start|run)\s+(?:the\s+|an\s+|a\s+)?([a-zA-Z0-9\s._-]+)$", msg)
+        app_target = None
         if open_match:
             app_target = open_match.group(1).strip()
+        elif msg in ["chrome", "google chrome", "edge", "msedge", "notepad", "calculator", "calc", "vscode", "vs code", "terminal", "task manager", "taskmgr"]:
+            app_target = msg
+
+        if app_target:
             ignored_words = ["it", "that", "this", "them", "the door", "up", "a discussion", "a topic", "eyes", "mouth", "mind", "settings", "the file", "the app", "file", "app", "the screenshot", "the image", "the video"]
             if app_target not in ignored_words and len(app_target) > 1:
                 res = app_launcher.resolve_and_launch(app_target)
@@ -1337,9 +1373,11 @@ class AssistantEngine:
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
                 on_complete(resp_msg, fast_action, audio_b64, model_used, session_id)
                 return
-            elif fast_action.get("tool") in ["edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "open_folder", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot", "web_search", "open_url", "open_top_youtube_video"]:
+            elif fast_action.get("tool") in ["open_app", "edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "open_folder", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot", "web_search", "open_url", "open_top_youtube_video"]:
                 t_tool = fast_action.get("tool")
-                if t_tool in ["create_presentation", "create_document", "create_pdf"]:
+                if t_tool == "open_app":
+                    set_status("Opening...", "executing", f"Launching {fast_action.get('param', 'application')}...")
+                elif t_tool in ["create_presentation", "create_document", "create_pdf"]:
                     set_status("Creating...", "creating", f"Generating slides and formatting '{fast_action.get('param', 'document')}'...")
                 elif t_tool in ["generate_ai_image", "alter_ai_image", "generate_ai_video", "edit_image", "edit_video"]:
                     set_status("Creating...", "creating", "Synthesizing generative visual media...")
@@ -1351,7 +1389,11 @@ class AssistantEngine:
                     on_tool(fast_action)
 
                 res = fast_action.get("result", {})
-                summary_text = res.get("summary") or res.get("action") or "Action completed."
+                if t_tool == "open_app":
+                    app_name = fast_action.get("param") or res.get("app") or "the application"
+                    summary_text = f"🚀 Opened **{app_name}** for you, sir."
+                else:
+                    summary_text = res.get("summary") or res.get("action") or "Action completed."
                 out_p = self._result_media_path(res)
                 resp_msg = self._append_preview_markup(summary_text, out_p) if out_p else summary_text
 
@@ -1360,10 +1402,18 @@ class AssistantEngine:
                 audio_b64 = None
                 if voice_mode and self.voice_engine.is_enabled():
                     try:
-                        speech_text = resp_msg.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
+                        if t_tool == "open_app":
+                            app_name = fast_action.get("param") or res.get("app") or "application"
+                            speech_text = f"Opening {app_name} for you now, sir."
+                        elif t_tool == "web_search":
+                            platform = res.get("platform", "YouTube")
+                            query = res.get("query", "")
+                            speech_text = f"Searching {platform} for {query} now, sir." if query else f"Opening {platform} for you now, sir."
+                        else:
+                            speech_text = resp_msg.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
                         audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
-                    except Exception as e:
-                        print(f"[AssistantEngine] Voice synthesis error: {e}")
+                    except Exception as ex:
+                        print(f"[AssistantEngine] Voice synthesis error: {ex}")
                 record_turn("user", user_message, atts=attachments)
                 record_turn("assistant", resp_msg, tool_info=fast_action)
                 model_used = getattr(self.groq_client, "last_model_used", self.model)

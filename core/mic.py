@@ -48,10 +48,15 @@ PHONETIC_CORRECTIONS = {
     r"\bvs\s*code\b":                     "VS Code",
     r"\bviscose\b":                       "VS Code",
     r"\bcode\s*visual\b":                 "VS Code",
+    r"\b(crome|chrom|krome|crom)\b":      "chrome",
+    r"\bempty\s*(found|had|hound|fount)\b": "empty hand",
 }
 
 # Speech synonyms — common spoken variants → normalized command text
 SPEECH_SYNONYMS = {
+    "emptyfound": "empty hand",
+    "empty found": "empty hand",
+    "empty had": "empty hand",
     "make a slide": "create presentation",
     "make slides": "create presentation",
     "make a slideshow": "create presentation",
@@ -175,26 +180,26 @@ class MicrophoneEngine:
                         rms = float(np.sqrt(np.mean(indata**2)))
                         now = time.time()
 
-                        # First 250ms calibrate ambient background noise baseline
-                        if now - self._start_time < 0.25:
+                        # First 200ms calibrate ambient background noise baseline
+                        if now - self._start_time < 0.20:
                             self._ambient_samples.append(rms)
                             if self._ambient_samples:
-                                self._ambient_level = max(0.005, float(np.mean(self._ambient_samples)))
+                                self._ambient_level = max(0.006, float(np.mean(self._ambient_samples)))
                             return
 
-                        # Natural human voice threshold: responsive to subtle and quiet speech
-                        voice_threshold = max(0.012, self._ambient_level * 1.35)
+                        # Human speech threshold: distinctly above background laptop noise
+                        voice_threshold = max(0.026, self._ambient_level * 1.8)
                         if rms > voice_threshold:
                             self._speech_frame_count += 1
                             if self._speech_frame_count >= 2:
                                 self._speech_detected = True
                             self._last_speech_time = now
                         elif self._speech_detected:
-                            # Genuine speech was detected and user paused naturally for >= 1.2s -> auto-stop
-                            if (now - self._last_speech_time) >= 1.2:
+                            # Speech detected and user paused naturally for >= 0.55s -> snappy auto-stop
+                            if (now - self._last_speech_time) >= 0.55:
                                 threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
-                        elif (now - self._start_time) >= 8.0:
-                            # User stopped talking or paused after 8s timeout -> trigger auto-stop
+                        elif (now - self._start_time) >= 4.0:
+                            # No speech detected within 4s -> auto-stop
                             threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
                     except Exception:
                         pass

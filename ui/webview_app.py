@@ -83,6 +83,11 @@ class AssistantApi:
                     self._window.evaluate_js(js_code)
 
             def on_tool(tool_info):
+                if tool_info and tool_info.get("tool") in ["open_app", "web_search", "open_url", "open_top_youtube_video"]:
+                    try:
+                        self.toggle_mini_mode(True)
+                    except Exception:
+                        pass
                 if self._window:
                     js_code = f"window.onToolExecuted({json.dumps(tool_info)});"
                     self._window.evaluate_js(js_code)
@@ -252,44 +257,53 @@ class AssistantApi:
 
             if enabled:
                 self._is_mini = True
-                if hwnd:
-                    user32 = ctypes.windll.user32
-                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE: ensures window is restored from minimized/taskbar state
-                    # Use Work Area (excludes taskbar) for proper positioning
-                    import ctypes
-                    class RECT(ctypes.Structure):
-                        _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long),
-                                    ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
-                    work_rect = RECT()
-                    user32.SystemParametersInfoW(48, 0, ctypes.byref(work_rect), 0)  # SPI_GETWORKAREA = 48
-                    target_w = 340
-                    target_h = 240
-                    target_x = max(10, work_rect.right - target_w - 20)
-                    target_y = max(10, work_rect.bottom - target_h - 20)
-                    HWND_TOPMOST = -1
-                    SWP_SHOWWINDOW = 0x0040
-                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, target_w, target_h, SWP_SHOWWINDOW)
+                target_w = 260
+                target_h = 240
+                user32 = ctypes.windll.user32
+                class RECT(ctypes.Structure):
+                    _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long),
+                                ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
+                work_rect = RECT()
+                user32.SystemParametersInfoW(48, 0, ctypes.byref(work_rect), 0)  # SPI_GETWORKAREA = 48
+                # Position compactly at the LEFT BOTTOM side of the screen
+                target_x = max(16, work_rect.left + 20)
+                target_y = max(16, work_rect.bottom - target_h - 16)
+
                 if self._window:
                     try:
                         self._window.restore()
+                        self._window.resize(target_w, target_h)
+                        self._window.move(target_x, target_y)
                         self._window.on_top = True
+                        self._window.evaluate_js("if (window.setMiniModeUI) { window.setMiniModeUI(true); }")
                     except Exception:
                         pass
+
+                if hwnd:
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    HWND_TOPMOST = -1
+                    SWP_SHOWWINDOW = 0x0040
+                    user32.SetWindowPos(hwnd, HWND_TOPMOST, target_x, target_y, target_w, target_h, SWP_SHOWWINDOW)
+
                 return True
             else:
                 self._is_mini = False
+                if self._window:
+                    try:
+                        self._window.on_top = False
+                        self._window.restore()
+                        self._window.resize(1140, 780)
+                        self._window.move(100, 100)
+                        self._window.evaluate_js("if (window.setMiniModeUI) { window.setMiniModeUI(false); }")
+                    except Exception:
+                        pass
                 if hwnd:
                     user32 = ctypes.windll.user32
                     user32.ShowWindow(hwnd, 9)
                     HWND_NOTOPMOST = -2
                     SWP_SHOWWINDOW = 0x0040
                     user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 100, 100, 1140, 780, SWP_SHOWWINDOW)
-                if self._window:
-                    try:
-                        self._window.on_top = False
-                        self._window.restore()
-                    except Exception:
-                        pass
+
                 return False
         except Exception as e:
             print(f"[AssistantApi] toggle_mini_mode error: {e}")
@@ -329,19 +343,35 @@ class AssistantApi:
             print(f"[AssistantApi] restore_and_focus error: {e}")
 
     def minimize_window(self):
-        """Minimizes the JARVIS window to the Windows taskbar."""
+        """Minimizes the JARVIS window cleanly to the Windows taskbar."""
         try:
-            import ctypes
             hwnd = self._get_hwnd()
             if hwnd:
+                import ctypes
                 ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE = 6
+                return True
+            elif self._window:
+                self._window.minimize()
                 return True
         except Exception as e:
             print(f"[AssistantApi] minimize_window error: {e}")
         return False
 
     def trigger_voice_toggle(self):
-        """Toggles hardware microphone listening on/off with instant audible feedback."""
+        """Toggles hardware microphone listening on/off in compact mini robot mode at the left-bottom."""
+        try:
+            # Always ensure window is in compact mini robot mode at the left bottom of the screen
+            self.toggle_mini_mode(True)
+            hwnd = self._get_hwnd()
+            if hwnd:
+                import ctypes
+                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+            if self._window:
+                self._window.evaluate_js("if (window.startListening) { window.startListening(); } else if (window.toggleRecording) { window.toggleRecording(); }")
+        except Exception as e:
+            print(f"[AssistantApi] trigger_voice_toggle mini mode error: {e}")
+
         try:
             import winsound
             def _play_cue():
@@ -667,7 +697,7 @@ def start_desktop_app():
         js_api=api,
         width=1140,
         height=780,
-        min_size=(300, 160),
+        min_size=(180, 180),
         background_color="#0d0d0d"
     )
 

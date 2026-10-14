@@ -2313,19 +2313,22 @@ body.mini-mode {
   width: 100vw !important;
   height: 100vh !important;
   margin: 0 !important;
-  padding: 12px !important;
+  padding: 6px !important;
   box-sizing: border-box !important;
   border: 1.5px solid rgba(0, 240, 255, 0.45);
-  box-shadow: inset 0 0 30px rgba(0, 240, 255, 0.12), 0 0 20px rgba(0, 240, 255, 0.3);
-  border-radius: 18px;
+  box-shadow: inset 0 0 25px rgba(0, 240, 255, 0.12), 0 0 20px rgba(0, 240, 255, 0.3);
+  border-radius: 16px;
   position: relative;
 }
 
 body.mini-mode .jarvis-robot-orb,
-body.mini-mode .jarvis-voice-orb {
-  position: static !important;
-  transform: scale(0.88) !important;
+body.mini-mode .jarvis-voice-orb,
+body.mini-mode .jarvis-robot-orb.hidden,
+body.mini-mode .jarvis-voice-orb.hidden {
+  position: relative !important;
+  transform: scale(0.82) !important;
   opacity: 1 !important;
+  visibility: visible !important;
   pointer-events: all !important;
   display: flex !important;
   flex-direction: column !important;
@@ -2338,20 +2341,24 @@ body.mini-mode .orb-label {
   position: static !important;
   margin-top: 4px !important;
   bottom: auto !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
 }
 
 body.mini-mode .orb-subtitle-card {
   position: static !important;
   transform: none !important;
-  margin-top: 10px !important;
-  max-width: 320px !important;
-  width: 94% !important;
-  max-height: 55px !important;
+  margin-top: 6px !important;
+  max-width: 230px !important;
+  width: 95% !important;
+  max-height: 48px !important;
   overflow-y: auto !important;
   pointer-events: auto !important;
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
+  font-size: 11px !important;
   background: rgba(12, 19, 36, 0.96) !important;
   border: 1px solid rgba(0, 240, 255, 0.35) !important;
+  border-radius: 10px !important;
 }
 
 body.mini-mode .orb-subtitle-card.hidden {
@@ -2440,21 +2447,6 @@ body.mini-mode .orb-mini-btn svg {
 }
 
 /* Voice Conversation Mode (Hands-Free Siri / JARVIS Companion) */
-body.voice-mode .messages-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-body.voice-mode .message-row {
-  display: none !important;
-}
-
-body.voice-mode .welcome-card {
-  display: none !important;
-}
-
 body.voice-mode .jarvis-robot-orb,
 body.voice-mode .jarvis-voice-orb {
   display: flex !important;

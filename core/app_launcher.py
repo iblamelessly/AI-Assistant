@@ -271,6 +271,35 @@ class AppLauncher:
         if not q:
             return {"status": "not_found", "query": raw_query}
 
+        # 0. Instant Fast-Path for Common Daily Applications (Zero filesystem lag, < 0.001s)
+        COMMON_FAST_APPS = {
+            "chrome": {"name": "Google Chrome", "path": "chrome.exe", "type": "cmd"},
+            "google chrome": {"name": "Google Chrome", "path": "chrome.exe", "type": "cmd"},
+            "edge": {"name": "Microsoft Edge", "path": "msedge.exe", "type": "cmd"},
+            "msedge": {"name": "Microsoft Edge", "path": "msedge.exe", "type": "cmd"},
+            "microsoft edge": {"name": "Microsoft Edge", "path": "msedge.exe", "type": "cmd"},
+            "brave": {"name": "Brave Browser", "path": "brave.exe", "type": "cmd"},
+            "firefox": {"name": "Mozilla Firefox", "path": "firefox.exe", "type": "cmd"},
+            "notepad": {"name": "Notepad", "path": "notepad.exe", "type": "cmd"},
+            "calc": {"name": "Calculator", "path": "calc.exe", "type": "cmd"},
+            "calculator": {"name": "Calculator", "path": "calc.exe", "type": "cmd"},
+            "file explorer": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
+            "explorer": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
+            "files": {"name": "File Explorer", "path": "explorer.exe", "type": "cmd"},
+            "vscode": {"name": "Visual Studio Code", "path": "code.cmd", "type": "cmd"},
+            "vs code": {"name": "Visual Studio Code", "path": "code.cmd", "type": "cmd"},
+            "code": {"name": "Visual Studio Code", "path": "code.cmd", "type": "cmd"},
+            "cmd": {"name": "Command Prompt", "path": "cmd.exe", "type": "cmd"},
+            "command prompt": {"name": "Command Prompt", "path": "cmd.exe", "type": "cmd"},
+            "terminal": {"name": "Windows Terminal", "path": "wt.exe", "type": "cmd"},
+            "task manager": {"name": "Task Manager", "path": "taskmgr.exe", "type": "cmd"},
+            "taskmgr": {"name": "Task Manager", "path": "taskmgr.exe", "type": "cmd"},
+            "paint": {"name": "Paint", "path": "mspaint.exe", "type": "cmd"},
+            "snipping tool": {"name": "Snipping Tool", "path": "snippingtool.exe", "type": "cmd"}
+        }
+        if q in COMMON_FAST_APPS:
+            return {"status": "found", "app": COMMON_FAST_APPS[q]}
+
         apps = self.get_installed_apps()
 
         # 1. Exact match in installed apps (case-insensitive)
@@ -396,7 +425,8 @@ class AppLauncher:
                     }
 
             if app_type == "cmd":
-                subprocess.Popen(path, shell=True)
+                cmd_to_run = path if path.startswith("start ") else f'start "" "{path}"'
+                subprocess.Popen(cmd_to_run, shell=True)
                 return {
                     "success": True,
                     "app": app_name,
