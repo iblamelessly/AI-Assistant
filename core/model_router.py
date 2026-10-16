@@ -101,28 +101,22 @@ class SuperAIRouter:
                 return cls.MODELS["gemini-3.5-flash"]["id"], "Software engineering (Gemini 3.5 Flash)"
             return cls.MODELS["qwen-coder"]["id"], "Software engineering query"
 
-        # Check for short chit-chat / quick questions (< 25 words and conversational match or general question)
-        if word_count <= 25 and not any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS):
-            if google_configured:
-                return cls.MODELS["gemini-3.5-flash"]["id"], "Fast conversational"
-            return cls.MODELS["gpt-oss-20b"]["id"], "Fast conversational"
-
-        # Check for deep reasoning / analysis
+        # Check for deep reasoning / analysis (math proofs, deep philosophical essays, architecture breakdown)
         if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS):
             if google_configured:
                 return cls.MODELS["gemini-3.8-flash"]["id"], "Deep reasoning (Gemini 3.8 Flash)"
             return cls.MODELS["gpt-oss-120b"]["id"], "Deep reasoning & analysis"
 
-        # If length is long (> 35 words) or multi-paragraph -> 120B / Gemini model for deep synthesis
-        if word_count > 35 or "\n\n" in text:
+        # Check for very long complex prompts (> 75 words) requiring heavy synthesis
+        if word_count > 75 or (word_count > 50 and "\n\n" in text):
             if google_configured:
                 return cls.MODELS["gemini-3.8-flash"]["id"], "Complex synthesis (Gemini 3.8 Flash)"
             return cls.MODELS["gpt-oss-120b"]["id"], "Complex multi-step instruction"
 
-        # Medium length general questions default to 120B or Gemini for superior intellectual responses
+        # Default conversational & interactive queries -> Ultra-Fast 20B (1.3s latency, fluid dialogue)
         if google_configured:
-            return cls.MODELS["gemini-3.8-flash"]["id"], "Intellectual reasoning (Gemini 3.8 Flash)"
-        return cls.MODELS["gpt-oss-120b"]["id"], "Intellectual reasoning engine"
+            return cls.MODELS["gemini-3.5-flash"]["id"], "Fast conversational"
+        return cls.MODELS["gpt-oss-20b"]["id"], "Fast conversational dialogue"
 
     @classmethod
     def classify_kind(cls, prompt: str, attachments: list = None) -> str:
@@ -138,11 +132,9 @@ class SuperAIRouter:
             return "code"
         if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.CODE_KEYWORDS):
             return "code"
-        if word_count <= 8 and any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.FAST_CONVERSATIONAL_KEYWORDS):
-            return "chat"
-        if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS) or word_count > 35 or "\n\n" in text:
+        if any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS) or word_count > 75:
             return "reasoning"
-        return "general"
+        return "chat"
 
     @classmethod
     def get_fallback_chain(cls, primary_model_id: str, google_configured: bool = False, prompt: str = "", attachments: list = None) -> List[str]:

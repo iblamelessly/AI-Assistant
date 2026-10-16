@@ -95,7 +95,17 @@ class HistoryManager:
     def list_sessions(self):
         with self._lock:
             result = []
-            for s in reversed(self.sessions):
+            # Sort sessions by most recent activity descending (latest message timestamp or created_at)
+            def get_sort_key(s):
+                msgs = s.get("messages", [])
+                if msgs and isinstance(msgs, list):
+                    last_t = msgs[-1].get("timestamp")
+                    if last_t:
+                        return float(last_t)
+                return float(s.get("updated_at") or s.get("created_at") or 0)
+
+            sorted_sessions = sorted(self.sessions, key=get_sort_key, reverse=True)
+            for s in sorted_sessions:
                 s_id = s.get("id")
                 if not s_id:
                     continue
@@ -161,6 +171,18 @@ class HistoryManager:
             if attachments:
                 msg["attachments"] = attachments
 
+            # Prevent duplicate consecutive messages (e.g. if recorded eagerly on turn start and again on completion)
+            if session["messages"]:
+                last_m = session["messages"][-1]
+                if last_m.get("role") == role and last_m.get("content") == content and abs(time.time() - last_m.get("timestamp", 0)) < 60:
+                    if tool_info and not last_m.get("tool_info"):
+                        last_m["tool_info"] = tool_info
+                        self._save()
+                    if attachments and not last_m.get("attachments"):
+                        last_m["attachments"] = attachments
+                        self._save()
+                    return session
+
             session["messages"].append(msg)
 
             # Auto-title session if it was "New Conversation" and user just spoke
@@ -169,6 +191,8 @@ class HistoryManager:
                 if len(clean_title) > 32:
                     clean_title = clean_title[:32] + "..."
                 session["title"] = clean_title
+
+            session["updated_at"] = time.time()
 
         self._save()
         return session

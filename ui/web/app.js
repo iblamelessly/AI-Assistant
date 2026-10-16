@@ -1136,7 +1136,7 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
             setOrbListening(true);
             toggleRecording();
           }
-        }, 150);
+        }, 600);
       } else {
         const label = document.getElementById("orb-status-text");
         if (label) label.textContent = "Tap robot to talk";
@@ -1150,7 +1150,7 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
           setOrbListening(true);
           toggleRecording();
         }
-      }, 150);
+      }, 500);
     } else {
       const label = document.getElementById("orb-status-text");
       if (label) label.textContent = "Tap robot to talk";
@@ -1250,6 +1250,12 @@ function sendMessage(overrideText) {
   const targetSessionId = currentSessionId || null;
   const saveHistory = true;
 
+  if (isNativeRecording) {
+    isNativeRecording = false;
+    stopRecordingUI();
+    setOrbListening(false);
+  }
+
   // Call Python API
   window.pywebview.api.send_message(userText, targetSessionId, attachmentsToSend, isVoice, saveHistory).catch((err) => {
     console.error("Send message error:", err);
@@ -1259,15 +1265,6 @@ function sendMessage(overrideText) {
     isStreaming = false;
     document.getElementById("btn-send").disabled = false;
   });
-
-  if (isVoice) {
-    // Keep continuous voice listening alive in background so the user can speak commands or corrections anytime
-    setTimeout(() => {
-      if (!isNativeRecording) {
-        toggleRecording();
-      }
-    }, 450);
-  }
 }
 
 window.startListening = function() {

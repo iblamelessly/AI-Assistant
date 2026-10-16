@@ -109,16 +109,24 @@ class MicrophoneEngine:
     def is_available(self) -> bool:
         return AUDIO_SUPPORTED
 
-    @staticmethod
-    def ensure_system_unmuted():
+    _system_unmuted_checked = False
+
+    @classmethod
+    def ensure_system_unmuted(cls):
         """
-        Safeguard: Checks Windows Core Audio endpoints and ensures
+        Safeguard: Checks Windows Core Audio endpoints once at startup and ensures
         the system microphone is unmuted and has an adequate recording volume.
-        Prevents hardware mute button or Windows settings from blocking audio capture.
+        Guarded to never re-run repeatedly or call CoUninitialize on active WebView2 threads.
         """
+        if cls._system_unmuted_checked:
+            return
+        cls._system_unmuted_checked = True
         try:
             import comtypes
-            comtypes.CoInitialize()
+            try:
+                comtypes.CoInitialize()
+            except Exception:
+                pass
             try:
                 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
                 from ctypes import cast, POINTER
@@ -134,8 +142,8 @@ class MicrophoneEngine:
                     if scalar < 0.30:
                         vol.SetMasterVolumeLevelScalar(0.85, None)
                         print(f"[MicrophoneEngine] Boosted low microphone volume to 85% (was {scalar*100:.0f}%).")
-            finally:
-                comtypes.CoUninitialize()
+            except Exception as e:
+                print(f"[MicrophoneEngine] Unmute check notice: {e}")
         except Exception:
             pass
 

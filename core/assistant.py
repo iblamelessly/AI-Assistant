@@ -1036,7 +1036,7 @@ class AssistantEngine:
                 if self._is_failed_model_output(combined):
                     return
                 # Only flush once we have confirmed the response is clean
-                if len(combined) >= 20 or "\n" in combined:
+                if len(combined) >= 3 or "\n" in combined:
                     flushed["ok"] = True
                     for part in pieces:
                         on_chunk(part)
@@ -1116,6 +1116,9 @@ class AssistantEngine:
         def record_turn(role, content, tool_info=None, atts=None):
             if save_history and session_id and str(session_id).strip() not in ["ephemeral", "transient", "null", "undefined", "None"]:
                 self.history_mgr.add_message(session_id, role, content, tool_info=tool_info, attachments=atts)
+
+        # Immediately persist user message to disk so history is never lost even if generation is interrupted or app closes
+        record_turn("user", user_message, atts=attachments)
 
         # Determine initial context-aware state based on user message
         msg_lower = (user_message or "").lower().strip()
