@@ -67,7 +67,7 @@ class SuperAIRouter:
 
     # Fast conversational indicators (greetings, quick confirmation, voice checks)
     FAST_CONVERSATIONAL_KEYWORDS = [
-        "hi", "hello", "hey", "good morning", "good evening", "good afternoon", "how are you",
+        "hi", "hello", "hey", "jarvis", "good morning", "good evening", "good afternoon", "how are you",
         "who are you", "what is your name", "what time is it", "tell me a joke", "thanks", "thank you",
         "bye", "goodbye", "cool", "awesome", "yes", "no", "ok", "okay", "sure", "can you hear me"
     ]
@@ -101,8 +101,10 @@ class SuperAIRouter:
                 return cls.MODELS["gemini-3.5-flash"]["id"], "Software engineering (Gemini 3.5 Flash)"
             return cls.MODELS["qwen-coder"]["id"], "Software engineering query"
 
-        # Check for short chit-chat / quick questions (< 10 words and conversational match)
-        if word_count <= 8 and any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.FAST_CONVERSATIONAL_KEYWORDS):
+        # Check for short chit-chat / quick questions (< 25 words and conversational match or general question)
+        if word_count <= 25 and not any(re.search(rf"\b{re.escape(kw)}\b", lower) for kw in cls.REASONING_KEYWORDS):
+            if google_configured:
+                return cls.MODELS["gemini-3.5-flash"]["id"], "Fast conversational"
             return cls.MODELS["gpt-oss-20b"]["id"], "Fast conversational"
 
         # Check for deep reasoning / analysis

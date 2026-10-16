@@ -504,6 +504,18 @@ class AssistantEngine:
                     }
                 }
 
+        # Instant Wake Word & Direct Call ("jarvis", "hey jarvis", "hello jarvis", "hi jarvis", "ok jarvis")
+        if re.search(r"^(?:(?:hey|hi|hello|ok|okay)\s+)?jarvis\b(?:\s+(?:are you there|you there|listen|wake up))?[?!.]*$", msg, re.IGNORECASE) or msg in ["jarvis", "hey jarvis", "hello jarvis", "hi jarvis", "ok jarvis"]:
+            return {
+                "tool": "wake_word",
+                "param": "wake",
+                "result": {
+                    "success": True,
+                    "action": "Wake Acknowledgement",
+                    "summary": "Yes, sir? How may I assist you?"
+                }
+            }
+
         # Hearing / Microphone / Speech Status Check (e.g. "can you hear me", "are you listening", "testing mic")
         if re.search(r"^(?:hello\s*,?\s*)?(?:can\s+you\s+hear\s+me|are\s+you\s+listening|do\s+you\s+hear\s+me|testing\s+mic(?:rophone)?|mic(?:rophone)?\s+test|can\s+you\s+speak|test\s+voice|test\s+audio)\b", msg, re.IGNORECASE):
             return {
@@ -701,6 +713,22 @@ class AssistantEngine:
             if platform_raw and query_raw and len(query_raw) > 1:
                 result = app_launcher.resolve_and_search(platform_raw, query_raw)
                 return {"tool": "web_search", "param": f"{platform_raw}: {query_raw}", "result": result}
+
+        # Pattern C: "open <app> (and/on) search <platform> (for <query>)"
+        # e.g. "open chrome on search youtube", "open chrome and search empty hand in youtube"
+        compound_search = re.search(
+            rf"^(?:please\s+|can\s+you\s+)?open\s+(?:chrome|google\s+chrome|browser)?\s*(?:and|on)?\s*(?:search|play|find)\s+({PLATFORMS_RE})?(?:\s+(?:for|about|in|on))?\s*(.+)$",
+            clean_yt, re.IGNORECASE
+        )
+        if compound_search:
+            platform_cand = compound_search.group(1) or "youtube"
+            query_cand = compound_search.group(2).strip()
+            if query_cand.lower() in ["youtube", "you tube", "yt"]:
+                res = app_launcher.resolve_and_search("youtube", "")
+                return {"tool": "web_search", "param": "youtube", "result": {"success": True, "platform": "YouTube", "query": "", "action": "open_url", "summary": "Opened YouTube in Chrome for you now, sir."}}
+            elif platform_cand and query_cand:
+                res = app_launcher.resolve_and_search(platform_cand, query_cand)
+                return {"tool": "web_search", "param": f"{platform_cand}: {query_cand}", "result": res}
 
         # File & Folder Intent Detection (e.g. "find my python file main.py", "open downloads folder", "where is test.py")
         has_web_platform = any(p in clean_yt for p in ["youtube", "you tube", "google", "spotify", "reddit", "github", "amazon"])
@@ -1373,9 +1401,23 @@ class AssistantEngine:
                 model_used = getattr(self.groq_client, "last_model_used", self.model)
                 on_complete(resp_msg, fast_action, audio_b64, model_used, session_id)
                 return
-            elif fast_action.get("tool") in ["open_app", "edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "open_folder", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot", "web_search", "open_url", "open_top_youtube_video"]:
+            elif fast_action.get("tool") in ["wake_word", "open_app", "edit_image", "edit_video", "display_media", "create_presentation", "create_document", "create_pdf", "open_file", "open_folder", "generate_ai_image", "alter_ai_image", "generate_ai_video", "take_screenshot", "web_search", "open_url", "open_top_youtube_video"]:
                 t_tool = fast_action.get("tool")
-                if t_tool == "open_app":
+                if t_tool == "wake_word":
+                    wake_msg = fast_action.get("result", {}).get("summary", "Yes, sir? How may I assist you?")
+                    on_chunk(wake_msg)
+                    set_status("Listening...", "listening", "Ready for your command, sir...")
+                    audio_b64 = None
+                    if voice_mode and self.voice_engine.is_enabled():
+                        try:
+                            audio_b64 = self.voice_engine.synthesize_and_speak("Yes, sir?", play_audio=False)
+                        except Exception as ex:
+                            print(f"[AssistantEngine] Voice synthesis error: {ex}")
+                    record_turn("user", user_message)
+                    record_turn("assistant", wake_msg, tool_info=fast_action)
+                    on_complete(wake_msg, fast_action, audio_b64, "instant-voice", session_id)
+                    return
+                elif t_tool == "open_app":
                     set_status("Opening...", "executing", f"Launching {fast_action.get('param', 'application')}...")
                 elif t_tool in ["create_presentation", "create_document", "create_pdf"]:
                     set_status("Creating...", "creating", f"Generating slides and formatting '{fast_action.get('param', 'document')}'...")

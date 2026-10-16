@@ -15,6 +15,27 @@ class VoiceEngine:
         self.voice = voice
         self.enabled = enabled
         self._lock = threading.Lock()
+        self._mem_cache = {}
+        # Pre-warm common responses asynchronously in background
+        threading.Thread(target=self._prewarm_cache, daemon=True).start()
+
+    def _prewarm_cache(self):
+        """Pre-synthesizes common JARVIS response phrases so they return instantly (0ms)."""
+        common_phrases = [
+            "Yes, sir?",
+            "At your service, sir.",
+            "Yes, sir, how may I help you?",
+            "Standing by, sir.",
+            "Opening Google Chrome for you now, sir.",
+            "Opening YouTube in Chrome for you now, sir.",
+            "Certainly, sir.",
+            "Right away, sir."
+        ]
+        for phrase in common_phrases:
+            try:
+                self.synthesize_and_speak(phrase, play_audio=False)
+            except Exception:
+                pass
 
     def set_enabled(self, enabled: bool):
         self.enabled = bool(enabled)
@@ -76,12 +97,12 @@ class VoiceEngine:
 
     def synthesize_and_speak(self, text: str, play_audio: bool = False) -> str | None:
         """
-        Single-pass neural speech synthesis:
-        1. Synthesizes high-fidelity British voice audio (edge-tts) ONCE.
-        2. Saves to a local cache file.
-        3. Only plays directly to Windows sound device if play_audio=True (CLI/background mode).
-           In GUI mode, play_audio=False prevents dual-playback echo with WebView2 HTML5 Audio.
-        4. Returns base64 payload for frontend waveform, subtitles, and animation.
+        High-performance neural speech synthesis with instant audio caching:
+        1. Checks in-memory & disk audio cache by hash of (voice, text). Instant return (~0.001s).
+        2. Synthesizes high-fidelity British voice audio (edge-tts 7.3+) if not in cache.
+        3. Saves to persistent disk cache for future instant re-use.
+        4. Plays audio if play_audio=True.
+        5. Returns base64 payload for frontend waveform and speech.
         """
         if not self.enabled or not text:
             return None
@@ -90,25 +111,45 @@ class VoiceEngine:
         if not clean_text:
             return None
 
-        audio_bytes = None
         out_dir = Path(__file__).resolve().parent.parent / "media" / "output" / "voice"
         out_dir.mkdir(parents=True, exist_ok=True)
         speech_file = out_dir / "jarvis_speech.mp3"
 
-        # 1. Edge TTS synthesis with authentic British JARVIS cadence (calibrated rate & pitch)
-        try:
-            import edge_tts
-            communicate = edge_tts.Communicate(clean_text, self.voice, rate="-3%", pitch="-2Hz")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(communicate.save(str(speech_file)))
-            loop.close()
+        # Check in-memory and persistent on-disk audio cache for instant return (0ms)
+        import hashlib
+        cache_key = hashlib.md5(f"{self.voice}:{clean_text}".encode("utf-8")).hexdigest()
+        cache_file = out_dir / f"cache_{cache_key}.mp3"
 
-            if speech_file.exists() and speech_file.stat().st_size > 0:
-                with open(speech_file, "rb") as f:
+        audio_bytes = None
+        if cache_key in self._mem_cache:
+            audio_bytes = self._mem_cache[cache_key]
+        elif cache_file.exists() and cache_file.stat().st_size > 0:
+            try:
+                with open(cache_file, "rb") as f:
                     audio_bytes = f.read()
-        except Exception as e:
-            print(f"[VoiceEngine] edge-tts error: {e}")
+                self._mem_cache[cache_key] = audio_bytes
+            except Exception:
+                pass
+
+        # Synthesize via edge-tts if not in cache
+        if not audio_bytes:
+            try:
+                import edge_tts
+                communicate = edge_tts.Communicate(clean_text, self.voice, rate="-3%", pitch="-2Hz")
+                asyncio.run(communicate.save(str(speech_file)))
+
+                if speech_file.exists() and speech_file.stat().st_size > 0:
+                    with open(speech_file, "rb") as f:
+                        audio_bytes = f.read()
+                    self._mem_cache[cache_key] = audio_bytes
+                    # Save to persistent cache file
+                    try:
+                        with open(cache_file, "wb") as f:
+                            f.write(audio_bytes)
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"[VoiceEngine] edge-tts error: {e}")
 
         # 2. SAPI5 pyttsx3 fallback if edge-tts produced no audio
         if not audio_bytes:

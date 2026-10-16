@@ -1334,6 +1334,17 @@ window.setMiniModeUI = function(isMini) {
   } else {
     document.body.classList.remove("mini-mode");
     if (toggleBtn) toggleBtn.classList.remove("active");
+    // Instantly restore and display conversation history in full view
+    if (currentSessionId && window.pywebview && window.pywebview.api) {
+      window.pywebview.api.load_session(currentSessionId).then((session) => {
+        if (session && session.messages) {
+          renderMessages(session.messages);
+        }
+      });
+      window.pywebview.api.get_sessions().then((sessions) => {
+        renderSessionList(sessions, currentSessionId);
+      });
+    }
   }
 };
 
@@ -1731,6 +1742,12 @@ function setupEventListeners() {
       } else {
         toggleRecording();
       }
+    });
+
+    orbCore.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      // Double click robot to expand to full chat window with conversation history
+      toggleMiniMode(false);
     });
   }
 

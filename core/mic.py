@@ -48,8 +48,11 @@ PHONETIC_CORRECTIONS = {
     r"\bvs\s*code\b":                     "VS Code",
     r"\bviscose\b":                       "VS Code",
     r"\bcode\s*visual\b":                 "VS Code",
-    r"\b(crome|chrom|krome|crom)\b":      "chrome",
+    r"\b(crome|chrom|krome|crom)\b":      "Chrome",
     r"\bempty\s*(found|had|hound|fount)\b": "empty hand",
+    r"\byibiar\b":                        "YouTube",
+    r"\bboog\b":                          "Google",
+    r"\b(chune|chlut|chye)\b":            "",
 }
 
 # Speech synonyms — common spoken variants → normalized command text
@@ -142,12 +145,20 @@ class MicrophoneEngine:
             if not self.is_recording or self._auto_stopped:
                 return
             self._auto_stopped = True
+            speech_was_detected = self._speech_detected
         wav_bytes = self.stop_recording()
-        if self._on_silence_callback:
+        # Only dispatch for transcription if actual human speech was detected!
+        if self._on_silence_callback and speech_was_detected and wav_bytes:
             try:
                 self._on_silence_callback(wav_bytes)
             except Exception as e:
                 print(f"[MicrophoneEngine] Error in on_silence callback: {e}")
+        elif self._on_silence_callback:
+            # If silence/timeout with no speech, notify frontend with empty string so it continues listening cleanly
+            try:
+                self._on_silence_callback(b"")
+            except Exception:
+                pass
 
     def start_recording(self, on_silence=None, auto_stop: bool = True) -> bool:
         """Starts recording audio from default microphone with dynamic VAD silence detection."""
@@ -188,7 +199,7 @@ class MicrophoneEngine:
                             return
 
                         # Human speech threshold: distinctly above background laptop noise
-                        voice_threshold = max(0.026, self._ambient_level * 1.8)
+                        voice_threshold = max(0.024, self._ambient_level * 1.7)
                         if rms > voice_threshold:
                             self._speech_frame_count += 1
                             if self._speech_frame_count >= 2:
@@ -199,7 +210,7 @@ class MicrophoneEngine:
                             if (now - self._last_speech_time) >= 0.55:
                                 threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
                         elif (now - self._start_time) >= 4.0:
-                            # No speech detected within 4s -> auto-stop
+                            # No speech detected within 4s -> auto-stop without sending audio
                             threading.Thread(target=self._trigger_auto_stop, daemon=True).start()
                     except Exception:
                         pass
@@ -225,6 +236,8 @@ class MicrophoneEngine:
             if not self.is_recording:
                 return b""
             self.is_recording = False
+            was_speech = self._speech_detected
+            speech_frames = self._speech_frame_count
             if self._stream:
                 try:
                     self._stream.stop()
@@ -233,15 +246,19 @@ class MicrophoneEngine:
                     pass
                 self._stream = None
 
-            if not self._frames:
+            if not self._frames or not was_speech or speech_frames < 2:
                 return b""
 
             audio_data = np.concatenate(self._frames, axis=0)
 
-            # Balanced Automatic Gain Control (AGC) for quiet microphones without blowing out noise:
+            # Check peak amplitude — reject pure background hiss/clicks
             peak = float(np.max(np.abs(audio_data)))
-            if 0.003 < peak < 0.6:
-                gain = min(6.0, 0.70 / peak)
+            if peak < 0.012:
+                return b""
+
+            # Balanced Automatic Gain Control (AGC) for clear speech without blowing out noise:
+            if 0.015 < peak < 0.6:
+                gain = min(4.0, 0.70 / peak)
                 audio_data = audio_data * gain
 
             buf = io.BytesIO()
@@ -272,33 +289,32 @@ class MicrophoneEngine:
 
     def transcribe(self, wav_bytes: bytes, groq_api_key: str = "") -> str:
         """
-        Transcribes WAV audio using Groq Whisper Large v3 (ultra-fast & high accuracy).
-        - Sends vocabulary prompt for better recognition of tech/AI terms.
-        - Applies phonetic normalization for Indian/regional accent accuracy.
-        Falls back to Google Speech Recognition if no key or offline.
+        Transcribes WAV audio using Groq Whisper Large v3 (state-of-the-art accuracy & ultra-fast).
+        - Primary: OpenAI whisper-large-v3 on Groq LPUs (~0.25s latency).
+        - Targeted vocabulary prompt prevents hallucinations.
+        - Strict repetition filter eliminates loop hallucinations (e.g. "Chune Chune...").
+        - Applies phonetic normalization for regional and English accents.
+        Falls back to Google Speech Recognition if offline.
         """
-        if not wav_bytes or len(wav_bytes) < 1000:
+        if not wav_bytes or len(wav_bytes) < 1200:
             return ""
 
-        # Primary: Groq Whisper API (~0.2s latency, high accuracy)
+        # Primary: Groq Whisper API with whisper-large-v3 (~0.25s latency, highest accuracy)
         if groq_api_key and len(groq_api_key) > 10:
             try:
                 headers = {"Authorization": f"Bearer {groq_api_key}"}
                 files = {"file": ("voice_input.wav", wav_bytes, "audio/wav")}
                 data = {
-                    "model": "whisper-large-v3-turbo",
-                    "language": "en",         # Force English — faster, more accurate for Indian English
-                    "temperature": "0",        # Deterministic — no randomness in transcription
-                    "response_format": "text", # Clean text response
-                    # Vocabulary hint: seed the model with JARVIS-specific terms
+                    "model": "whisper-large-v3", # Flagship Whisper Large v3
+                    "language": "en",            # English
+                    "temperature": "0",          # Deterministic
+                    "response_format": "text",   # Clean text
+                    # Crisp, targeted vocabulary prompt to anchor context without inducing hallucination:
                     "prompt": (
-                        "JARVIS, YouTube, PowerPoint, Python, PDF, presentation, slides, "
-                        "Telegram, GitHub, Google, Spotify, Reddit, Amazon, LinkedIn, "
-                        "create, search, open, download, screenshot, PPT, docx, "
-                        "volume, folder, cyberpunk, aurora, obsidian, midnight, "
-                        "ocean blue, forest, sunset, rose gold, corporate, executive, "
-                        "VS Code, terminal, PowerShell, file explorer, WhatsApp, Netflix, "
-                        "Instagram, Pinterest, Flipkart, Wikipedia, Stack Overflow"
+                        "JARVIS, personal AI assistant. English voice commands: "
+                        "open, search, YouTube, Chrome, Google, WhatsApp, Spotify, VS Code, "
+                        "PowerPoint, presentation, Python, PDF, screenshot, volume, close, play, time, "
+                        "what is, how to, empty hand, yes sir, thank you."
                     )
                 }
                 resp = requests.post(
@@ -306,49 +322,62 @@ class MicrophoneEngine:
                     headers=headers,
                     files=files,
                     data=data,
-                    timeout=10
+                    timeout=8
                 )
                 if resp.status_code != 200:
-                    # Retry with whisper-large-v3 if turbo model has an outage
-                    data["model"] = "whisper-large-v3"
+                    # Fallback to turbo variant if standard model has temporary queue
+                    data["model"] = "whisper-large-v3-turbo"
                     files = {"file": ("voice_input.wav", wav_bytes, "audio/wav")}
                     resp = requests.post(
                         "https://api.groq.com/openai/v1/audio/transcriptions",
                         headers=headers,
                         files=files,
                         data=data,
-                        timeout=10
+                        timeout=8
                     )
 
                 if resp.status_code == 200:
                     raw_text = resp.text.strip() if isinstance(resp.text, str) else resp.json().get("text", "").strip()
                     if raw_text:
-                        clean_lower = raw_text.lower().strip().strip(".?!")
+                        # Clean bracketed sound cues like [Music], (Applause), [Silence]
+                        clean_text = re.sub(r"\[.*?\]|\(.*?\)", "", raw_text).strip()
+                        clean_lower = clean_text.lower().strip().strip(".?!")
+
+                        # Hallucination blacklist for ambient background noises
                         HALLUCINATION_BLACKLIST = {
                             "thank you", "thank you very much", "thanks for watching",
                             "subtitles by", "you", "bye", "silence", "...", "the", "a",
                             "an", "mbc", "amara.org", "please subscribe", "subscribe",
-                            "watching", "like and subscribe", "so", "oh", "um", "uh"
+                            "watching", "like and subscribe", "so", "oh", "um", "uh",
+                            "chune", "chlut", "chye", "foreign", "applause", "music",
+                            "laughter", "cheering", "sound", "noise", "whisper"
                         }
-                        if clean_lower in HALLUCINATION_BLACKLIST or clean_lower.startswith("subtitles by") or len(clean_lower) <= 2:
+                        if clean_lower in HALLUCINATION_BLACKLIST or clean_lower.startswith("subtitles by") or len(clean_lower) <= 1:
                             return ""
-                        normalized = self.normalize_transcript(raw_text)
+
+                        # Repetition filter: detect Whisper loop hallucinations (e.g. "Chune Chune...", "word word word")
+                        words = clean_lower.split()
+                        if len(words) >= 3:
+                            if max(words.count(w) for w in set(words)) / len(words) > 0.45 or re.search(r"(\b\w+\b)(?:\s+\1){2,}", clean_lower):
+                                return ""
+
+                        normalized = self.normalize_transcript(clean_text)
                         return normalized
                 else:
                     print(f"[MicrophoneEngine] Groq Whisper error {resp.status_code}: {resp.text}")
             except Exception as e:
                 print(f"[MicrophoneEngine] Groq transcription error: {e}")
 
-        # Secondary Fallback: speech_recognition Google Speech API (max 8s timeout)
+        # Secondary Fallback: speech_recognition Google Speech API (max 6s timeout)
         try:
             import speech_recognition as sr
             r = sr.Recognizer()
-            r.operation_timeout = 8
+            r.operation_timeout = 6
             with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
                 audio = r.record(source)
             text = r.recognize_google(audio)
             clean_text = text.strip()
-            if len(clean_text) <= 2:
+            if len(clean_text) <= 1:
                 return ""
             return self.normalize_transcript(clean_text)
         except Exception as e:
