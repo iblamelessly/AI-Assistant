@@ -186,12 +186,13 @@ class AssistantEngine:
         )
         if voice_mode:
             prompt += (
-                "\n\nVOICE CONVERSATION MODE ACTIVE (SIRI / REAL JARVIS SPOKEN COMPANION):\n"
-                "- The user is talking directly to you via voice in real-time hands-free conversation.\n"
-                "- Reply verbally in 1 to 3 punchy, crisp, natural conversational sentences.\n"
-                "- Be articulate, charming, and sharp as Tony Stark's JARVIS.\n"
-                "- CRITICAL: When the user asks to perform an action (open app, search web, change volume, run code, create files), YOU MUST append the [ACTION: ...] tag or executable code block at the very end of your response so the system performs the live operation on the laptop while you speak!\n"
-                "- State your confirmation warmly and concisely (e.g. 'Opening that for you now, sir.' [ACTION: open_app(\"notepad\")]).\n"
+                "\n\nVOICE CONVERSATION MODE ACTIVE (ANTHROPIC VOICE CONVERSATIONAL SPECIFICATION):\n"
+                "- The user is interacting via real-time spoken voice passed through Text-to-Speech (TTS).\n"
+                "- Hard limit: Reply verbally in no more than 2 sentences and no more than 50 words, except when explicitly asked to elaborate in depth.\n"
+                "- Zero markdown symbols in spoken lines: Never produce raw markdown asterisks, tables, bullet points, or backtick code in spoken sentences; speak only full, natural sentences.\n"
+                "- Be articulate, sharp, and concise as Tony Stark's JARVIS.\n"
+                "- When the user asks to perform an action (open app, search web, change volume, run code, create files), append the [ACTION: ...] tag or executable code block at the very end so the system executes it immediately while you speak.\n"
+                "- State your confirmation concisely (e.g. 'Opening Google Chrome for you now, sir.' [ACTION: open_app(\"chrome\")]).\n"
             )
         return prompt
 

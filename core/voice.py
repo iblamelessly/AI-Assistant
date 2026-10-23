@@ -46,8 +46,42 @@ class VoiceEngine:
     def set_voice(self, voice_name: str):
         self.voice = voice_name
 
+    # Phonetic pronunciation mapping to prevent TTS from mispronouncing technical terms (Claude Voice Mode pattern)
+    PHONETIC_PRONUNCIATIONS = {
+        r"\bChromium\b": "KRO-mee-um",
+        r"\bPowerShell\b": "POW-er-shell",
+        r"\bVulkan\b": "VUL-kan",
+        r"\bffmpeg\b": "F-F-em-peg",
+        r"\bFFmpeg\b": "F-F-em-peg",
+        r"\bGUI\b": "GOO-ee",
+        r"\bCLI\b": "C-L-I",
+        r"\bAPI\b": "A-P-I",
+        r"\bAPIs\b": "A-P-Is",
+        r"\bSQL\b": "SEE-kwul",
+        r"\bPostgreSQL\b": "Post-gres Q-L",
+        r"\bJSON\b": "JAY-son",
+        r"\bYAML\b": "YAM-ul",
+        r"\bRegex\b": "REG-ex",
+        r"\bregex\b": "REG-ex",
+        r"\bGitHub\b": "GIT-hub",
+        r"\bPywebview\b": "Pie-web-view",
+        r"\bJARVIS\b": "JAR-vis",
+        r"\bTTS\b": "T-T-S",
+        r"\bSTT\b": "S-T-T",
+        r"\bLLM\b": "L-L-M",
+        r"\bLLMs\b": "L-L-Ms",
+        r"\bstdout\b": "standard out",
+        r"\bstderr\b": "standard error",
+        r"\bstdin\b": "standard in",
+        r"\brepo\b": "REE-po",
+        r"\brepos\b": "REE-pos",
+    }
+
     def clean_text_for_speech(self, text: str) -> str:
-        """Strips markdown code blocks, tags, URLs, and symbols for clean spoken voice in English."""
+        """
+        Strips markdown code blocks, tags, URLs, tables, and symbols for clean spoken voice.
+        Enforces Anthropic voice-mode strict 50-word/2-sentence ceiling and phonetic clarity.
+        """
         if not text:
             return ""
 
@@ -60,8 +94,10 @@ class VoiceEngine:
         for k, v in replacements.items():
             text = text.replace(k, v)
 
+        # Remove HTML and XML tags
+        cleaned = re.sub(r"<[^>]+>", " ", text)
         # Remove code blocks ```...```
-        cleaned = re.sub(r"```[\s\S]*?```", " [Code output omitted] ", text)
+        cleaned = re.sub(r"```[\s\S]*?```", " [Code output omitted] ", cleaned)
         # Remove tool tags [ACTION: ...] or [TOOL: ...]
         cleaned = re.sub(r"\[(?:ACTION|TOOL):\s*.*?\]", "", cleaned)
         # Remove suggestions [Suggestion: ...]
@@ -70,28 +106,45 @@ class VoiceEngine:
         cleaned = re.sub(r"\[DOCUMENT:[\s\S]*?\]", "", cleaned)
         # Remove media tags [MEDIA: ...]
         cleaned = re.sub(r"\[MEDIA:[\s\S]*?\]", "", cleaned)
-        # Remove markdown headers and formatting
+        # Remove markdown tables (| header | header |)
+        cleaned = re.sub(r"^\s*\|.*?\|\s*$", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"\|", " ", cleaned)
+        # Convert markdown links [text](url) to just text
+        cleaned = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", cleaned)
+        # Remove markdown headers and formatting symbols
         cleaned = re.sub(r"[#*_~`>]", "", cleaned)
         # Remove bullet markers
         cleaned = re.sub(r"^\s*[-*•]\s+", "", cleaned, flags=re.MULTILINE)
-        # Remove URLs
+        # Remove raw URLs
         cleaned = re.sub(r"https?://\S+", "link", cleaned)
+        # Remove LaTeX / math delimiters
+        cleaned = re.sub(r"\$[^$]+\$", "", cleaned)
+        cleaned = re.sub(r"\\[\(\)\[\]]", "", cleaned)
+
+        # Apply phonetic pronunciations for technical words
+        for pattern, phonetic in self.PHONETIC_PRONUNCIATIONS.items():
+            cleaned = re.sub(pattern, phonetic, cleaned)
+
         # Normalize whitespace
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-        # Limit spoken length so Jarvis doesn't drone on forever if user asked for a 20-page document
-        if len(cleaned) > 400:
-            # Speak the first 2-3 sentences
+        # Strict Anthropic voice mode ceiling: max 50 words / 2 sentences
+        words = cleaned.split()
+        if len(words) > 50:
             sentences = re.split(r"(?<=[.!?])\s+", cleaned)
-            summary = ""
+            summary_sentences = []
+            curr_words = 0
             for s in sentences:
-                if len(summary) + len(s) <= 350:
-                    summary += (" " + s)
+                s_words = len(s.split())
+                if curr_words + s_words <= 45 and len(summary_sentences) < 2:
+                    summary_sentences.append(s)
+                    curr_words += s_words
                 else:
                     break
-            if not summary.strip():
-                summary = cleaned[:320]
-            cleaned = summary.strip() + " I have displayed the full details on your screen, sir."
+            if summary_sentences:
+                cleaned = " ".join(summary_sentences).strip() + " I have displayed the full details on your screen, sir."
+            else:
+                cleaned = " ".join(words[:40]) + "... I have displayed the full details on your screen, sir."
 
         return cleaned
 
