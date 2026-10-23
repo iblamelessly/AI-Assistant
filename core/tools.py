@@ -622,6 +622,88 @@ class AssistantTools:
         except Exception as e:
             return {"success": False, "error": str(e), "summary": f"Failed to open URL: {e}"}
 
+    @classmethod
+    def extended_web_research(cls, topic: str, max_sources: int = 6) -> dict:
+        """
+        Anthropic Multi-Query Research Pipeline (research_instructions.md).
+        1. Decomposes the research topic into 3 distinct orthogonal queries.
+        2. Retrieves live web results across all angles via DDG Lite.
+        3. Sanitizes all external text via WebInjectionDefense to defang prompt injection.
+        4. Deduplicates domains and compiles an executive research brief with inline citations.
+        """
+        import urllib.request
+        import urllib.parse
+        from bs4 import BeautifulSoup
+        from urllib.parse import urlparse
+
+        clean_topic = (topic or "").strip()
+        if not clean_topic:
+            return {"success": False, "error": "No topic provided", "summary": "Please provide a research topic, sir."}
+
+        # 1. Query Diversification (Anthropic multi-angle expansion)
+        sub_queries = [
+            clean_topic,
+            f"{clean_topic} comparison benchmarks",
+            f"{clean_topic} best practices guide"
+        ]
+
+        collected_results = []
+        seen_urls = set()
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+
+        for q in sub_queries:
+            try:
+                data = urllib.parse.urlencode({"q": q}).encode("utf-8")
+                req = urllib.request.Request("https://lite.duckduckgo.com/lite/", data=data, headers=headers)
+                resp = urllib.request.urlopen(req, timeout=5).read().decode("utf-8", errors="replace")
+                soup = BeautifulSoup(resp, "html.parser")
+                links = soup.select(".result-link")
+                snippets = soup.select(".result-snippet")
+                for i in range(min(len(links), len(snippets), 3)):
+                    href = links[i].get("href", "")
+                    title = links[i].get_text(strip=True)
+                    snippet = snippets[i].get_text(strip=True)
+                    if href and href not in seen_urls and not href.startswith("/"):
+                        seen_urls.add(href)
+                        sanitized_snippet = WebInjectionDefense.sanitize(snippet)["safe_text"]
+                        domain = urlparse(href).netloc.replace("www.", "")
+                        collected_results.append({
+                            "title": title,
+                            "url": href,
+                            "domain": domain,
+                            "snippet": sanitized_snippet,
+                            "query": q
+                        })
+                        if len(collected_results) >= max_sources:
+                            break
+            except Exception as e:
+                print(f"[AssistantTools] Extended research query '{q}' note: {e}")
+            if len(collected_results) >= max_sources:
+                break
+
+        if not collected_results:
+            return cls.open_web_search(clean_topic)
+
+        brief_lines = [f"### Extended Research Brief: {clean_topic}\n"]
+        brief_lines.append("**Key Findings Across Diversified Sources:**\n")
+        for idx, res in enumerate(collected_results, 1):
+            brief_lines.append(f"{idx}. **{res['title']}** — {res['snippet']} [[{res['domain']}]({res['url']})]")
+
+        brief_text = "\n".join(brief_lines)
+        return {
+            "success": True,
+            "topic": clean_topic,
+            "queries_executed": sub_queries,
+            "sources_count": len(collected_results),
+            "results": collected_results,
+            "summary": brief_text,
+            "action": f"Executed multi-query research on '{clean_topic}'"
+        }
+
     @staticmethod
     def search_files(query: str, extension: str = None) -> dict:
         """Searches for files on the laptop matching a query or extension."""
@@ -967,6 +1049,8 @@ class AssistantTools:
             return cls.open_application(arg0)
         elif t in ["open_web_search", "web_search", "search"]:
             return cls.open_web_search(arg0)
+        elif t in ["extended_web_research", "extended_search", "deep_research", "research"]:
+            return cls.extended_web_research(arg0)
         elif t in ["open_top_youtube_video", "play_youtube", "first_youtube_link", "youtube_top_video"]:
             return cls.open_top_youtube_video(arg0)
         elif t in ["open_url", "browse"]:

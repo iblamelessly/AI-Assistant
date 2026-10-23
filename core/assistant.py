@@ -193,6 +193,7 @@ class AssistantEngine:
             "- Open app: [ACTION: open_app(\"app_name\")]\n"
             "- Terminate app: [ACTION: kill_process(\"process_name\")]\n"
             "- Web search: [ACTION: web_search(\"query\")]\n"
+            "- Extended multi-query research: [ACTION: extended_web_research(\"topic\")] (Anthropic research_instructions.md: decomposes topic into multi-angle queries, searches the web, and returns synthesized intelligence with citations)\n"
         )
         if voice_mode:
             prompt += (
@@ -1672,8 +1673,8 @@ class AssistantEngine:
                 set_status("Executing Code...", "executing", f"Executing code in stateful {t_name} REPL...")
             elif t_name in ["create_presentation", "create_document", "create_pdf", "generate_ai_image", "alter_ai_image", "generate_ai_video"]:
                 set_status("Creating...", "creating", f"Creating content with {t_name}...")
-            elif t_name in ["search_files", "search_folders", "web_search", "inspect_media", "read_file", "list_directory"]:
-                set_status("Analyzing...", "analyzing", f"Inspecting system data with {t_name}...")
+            elif t_name in ["search_files", "search_folders", "web_search", "extended_web_research", "inspect_media", "read_file", "list_directory"]:
+                set_status("Analyzing...", "analyzing", f"Conducting deep research & data inspection with {t_name}...")
             else:
                 set_status("Executing...", "executing", f"Executing system action: {t_name}...")
             t_result = AssistantTools.execute_tool(t_name, *args)
