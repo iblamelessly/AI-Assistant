@@ -487,6 +487,34 @@ function renderDocumentTags(htmlText) {
   });
 }
 
+// Render interactive visual artifacts (Anthropic visualize.md specification)
+function renderVisualizationTags(htmlText) {
+  if (!htmlText) return "";
+  const visRegex = /\[VISUALIZE:\s*(diagram|chart|interactive|mockup)\s*\|\s*([\s\S]*?)\]/gi;
+  return htmlText.replace(visRegex, function(match, type, content) {
+    const cleanContent = content.trim();
+    const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+    return `
+      <div class="chat-visual-card visual-type-${type}">
+        <div class="chat-visual-header">
+          <span class="chat-visual-badge">🎨 Visual ${typeLabel}</span>
+          <button class="btn-visual-fullscreen" onclick="toggleVisualFullscreen(this)" title="Toggle expansion">⛶ Expand</button>
+        </div>
+        <div class="chat-visual-viewport">
+          ${cleanContent}
+        </div>
+      </div>
+    `;
+  });
+}
+
+window.toggleVisualFullscreen = function(btn) {
+  const card = btn.closest(".chat-visual-card");
+  if (!card) return;
+  card.classList.toggle("fullscreen");
+  btn.textContent = card.classList.contains("fullscreen") ? "✕ Collapse" : "⛶ Expand";
+};
+
 window.openDocumentFile = function(filePath) {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.open_document_file) {
     window.pywebview.api.open_document_file(filePath);
@@ -799,7 +827,7 @@ function appendMessageBubble(role, content, toolInfo = null, attachments = null)
     cleanContent = extracted.cleanText;
     suggestions = extracted.suggestions;
   }
-  htmlContent += renderDocumentTags(renderMediaTags(parseMarkdown(cleanContent)));
+  htmlContent += renderVisualizationTags(renderDocumentTags(renderMediaTags(parseMarkdown(cleanContent))));
 
   // If Jarvis asks a human confirmation question, add interactive Yes/No buttons
   if (role === "assistant" && (content.includes("[Yes / No]") || content.includes("[Yes/No]") || content.includes("[Overwrite / Cancel]") || content.includes("Proceed?"))) {
@@ -1053,7 +1081,7 @@ window.onStreamChunk = function(chunk) {
   if (currentAssistantBubble) {
     const extracted = extractSuggestions(currentStreamBuffer);
     const pillHtml = `<div class="active-task-pill state-${currentStatusType}"><span class="active-task-dot"></span><span class="active-task-label">${escapeHtml(currentStatusText)}</span></div><br/>`;
-    const contentHtml = renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText))) + '<span class="typing-cursor"></span>';
+    const contentHtml = renderVisualizationTags(renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText)))) + '<span class="typing-cursor"></span>';
     currentAssistantBubble.innerHTML = pillHtml + contentHtml;
     loadAsyncMediaElements(currentAssistantBubble);
     scrollToBottom();
@@ -1099,7 +1127,7 @@ window.onStreamComplete = function(fullResponse, toolInfo, audioB64, modelUsed, 
       }
     }
     const extracted = extractSuggestions(fullResponse);
-    finalHtml += renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText)));
+    finalHtml += renderVisualizationTags(renderDocumentTags(renderMediaTags(parseMarkdown(extracted.cleanText))));
 
     if (fullResponse.includes("[Yes / No]") || fullResponse.includes("[Yes/No]") || fullResponse.includes("[Overwrite / Cancel]") || fullResponse.includes("Proceed?")) {
       finalHtml += `
