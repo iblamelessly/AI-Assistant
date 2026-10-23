@@ -216,6 +216,54 @@ class AssistantEngine:
                     args.append(cleaned)
         return args
 
+    def _synthesize_dual_track_voice(self, full_text: str, tool_info: dict = None) -> str | None:
+        """
+        Anthropic Dual-Track Voice Mode Engine:
+        Separates the visual deliverable from the spoken executive delivery.
+        - Visual track (chat UI): retains 100% full code, markdown tables, documents, logs.
+        - Spoken track (audio TTS): delivers a natural, punchy 1-2 sentence executive summary
+          without attempting to read code syntax, raw tables, or terminal output over voice.
+        """
+        if not self.voice_engine or not self.voice_engine.is_enabled() or not full_text:
+            return None
+
+        try:
+            # Check for structured elements
+            has_code = "```" in full_text
+            has_table = bool(re.search(r"^\s*\|.*?\|\s*$", full_text, flags=re.MULTILINE))
+            has_doc = "[DOCUMENT:" in full_text or "[MEDIA:" in full_text
+            has_output = "**Output:**" in full_text or "exit code 0" in full_text.lower()
+
+            # Clean out structured blocks to get conversational prose
+            prose = full_text.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
+            prose = re.sub(r"```[\s\S]*?```", "", prose).strip()
+            prose = re.sub(r"\*\*Output:\*\*[\s\S]*", "", prose).strip()
+            # Remove markdown table lines
+            prose = re.sub(r"^\s*\|.*?\|\s*$", "", prose, flags=re.MULTILINE).strip()
+
+            # Construct targeted executive spoken summary if structured elements dominated
+            if has_code and (len(prose) < 15 or prose.endswith(":")):
+                clean_intro = prose.rstrip(":").strip()
+                if clean_intro and len(clean_intro.split()) < 15:
+                    spoken = f"{clean_intro}, sir. I have placed the code on your screen."
+                else:
+                    spoken = "I have generated the code and displayed it on your screen, sir."
+            elif has_table and len(prose) < 20:
+                spoken = "I have compiled the data into a table on your screen, sir."
+            elif has_doc:
+                spoken = "I have created the document and opened the preview on your screen, sir."
+            elif has_output and len(prose) < 15:
+                spoken = "The command execution has completed. Details are on your screen, sir."
+            elif not prose:
+                spoken = "Action completed for you, sir."
+            else:
+                spoken = prose
+
+            return self.voice_engine.synthesize_and_speak(spoken, play_audio=False)
+        except Exception as e:
+            print(f"[AssistantEngine] Dual-track voice synthesis error: {e}")
+            return None
+
     def _detect_media_intent(self, msg: str, raw_msg: str):
         """Detects image or video editing requests on the fast path."""
         target_path = None
@@ -1720,19 +1768,11 @@ class AssistantEngine:
         if out_p:
             clean_display = self._append_preview_markup(clean_display, out_p)
 
-        # 9. Voice Synthesis (ONLY for oral speech / voice mode)
+        # 9. Voice Synthesis (Anthropic Dual-Track Spoken vs Visual Delivery)
         audio_b64 = None
         if voice_mode and self.voice_engine.is_enabled():
             set_status("Speaking...", "speaking", "Synthesizing English voice response...")
-            try:
-                speech_text = clean_display.split("[MEDIA:")[0].split("[DOCUMENT:")[0].split("[Suggestion:")[0].strip()
-                speech_text = re.sub(r"```[\s\S]*?```", "", speech_text).strip()
-                speech_text = re.sub(r"\*\*Output:\*\*[\s\S]*", "", speech_text).strip()
-                if not speech_text:
-                    speech_text = "I have executed the operation for you, sir."
-                audio_b64 = self.voice_engine.synthesize_and_speak(speech_text, play_audio=False)
-            except Exception as e:
-                print(f"[AssistantEngine] Voice synthesis error: {e}")
+            audio_b64 = self._synthesize_dual_track_voice(clean_display, tool_action_performed)
 
         # 10. Record history
         record_turn("user", user_message, atts=attachments)
