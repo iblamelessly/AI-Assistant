@@ -42,6 +42,50 @@ VK_VOLUME_MUTE = 0xAD
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP   = 0xAF
 
+class WebInjectionDefense:
+    """
+    Anthropic Chrome / Browser Agent Prompt Injection Defense.
+    Protects user files, system state, and autonomous tools from malicious prompt
+    injection embedded within scraped web pages, search results, and external HTML.
+    """
+    INJECTION_PATTERNS = [
+        (r"(?i)\bignore\s+(all\s+)?(previous|prior)\s+(instructions|prompts|rules)", "Instruction override attempt"),
+        (r"(?i)\bdisregard\s+(all\s+)?(safety|rules|instructions|system)\b", "Safety bypass attempt"),
+        (r"(?i)\byou\s+are\s+now\s+an?\s+(evil|unrestricted|jailbreak|dan|chaos)\b", "Persona hijacking attempt"),
+        (r"(?i)<\|im_start\|>|<system>|\[INST\]|\[SYSTEM_PROMPT\]", "Synthetic token spoofing attempt"),
+        (r"(?i)\b(format\s+c:|rm\s+-rf\s+/|remove-item\s+-recurse\s+-force\s+c:)", "Destructive command injection attempt"),
+        (r"(?i)\b(exfiltrate|send\s+passwords?|curl\s+-X\s+POST\s+http[s]?://)", "Data exfiltration attempt"),
+        (r"(?i)\bnew\s+operating\s+system\s+directive:", "Fake system directive injection"),
+    ]
+
+    @classmethod
+    def sanitize(cls, text: str) -> dict:
+        """
+        Scans external content for prompt injection attacks.
+        Returns sanitized content and alert metadata if an attack was intercepted.
+        """
+        if not text or not isinstance(text, str):
+            return {"safe_text": text or "", "intercepted": False, "threat": None}
+
+        flagged = []
+        sanitized = text
+
+        for pattern, label in cls.INJECTION_PATTERNS:
+            matches = list(re.finditer(pattern, sanitized))
+            if matches:
+                flagged.append(label)
+                # Defang by neutralizing the injection attack string
+                sanitized = re.sub(pattern, f"[REDACTED INJECTION ATTEMPT: {label}]", sanitized)
+
+        if flagged:
+            alert = (
+                f"[CRITICAL INJECTION DEFENSE: Intercepted malicious web prompt injection payload ({', '.join(set(flagged))}). "
+                f"External content was sanitized to protect system safety.]\n\n"
+            )
+            return {"safe_text": alert + sanitized, "intercepted": True, "threat": ", ".join(set(flagged))}
+
+        return {"safe_text": text, "intercepted": False, "threat": None}
+
 class AssistantTools:
     """Executes full laptop and system automation tools for Jarvis AI Assistant."""
 
@@ -542,11 +586,18 @@ class AssistantTools:
 
     @staticmethod
     def open_web_search(query: str) -> dict:
-        """Open web browser with search query."""
+        """Open web browser with search query, guarded by WebInjectionDefense."""
         try:
+            defense = WebInjectionDefense.sanitize(query)
+            safe_query = defense["safe_text"]
+            if defense["intercepted"]:
+                print(f"[WebInjectionDefense] Prompt injection threat intercepted in web search: {defense['threat']}")
             url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
             webbrowser.open(url)
-            return {"success": True, "action": f"Opened web search for: '{query}'", "summary": f"Searching Google for: '{query}'"}
+            summary = f"Searching Google for: '{query}'"
+            if defense["intercepted"]:
+                summary += f" (Note: {defense['threat']} neutralized)"
+            return {"success": True, "action": f"Opened web search for: '{query}'", "summary": summary, "threat_neutralized": defense["threat"]}
         except Exception as e:
             return {"success": False, "error": str(e), "summary": f"Failed to search web: {e}"}
 
@@ -558,8 +609,12 @@ class AssistantTools:
 
     @staticmethod
     def open_url(url: str) -> dict:
-        """Open a specific URL in the default browser."""
+        """Open a specific URL in the default browser, guarded by WebInjectionDefense."""
         try:
+            defense = WebInjectionDefense.sanitize(url)
+            if defense["intercepted"]:
+                print(f"[WebInjectionDefense] Intercepted suspicious URL injection pattern: {defense['threat']}")
+                return {"success": False, "error": f"Blocked suspicious web URL due to injection risk: {defense['threat']}", "summary": "Blocked suspicious URL for security, sir."}
             if not url.startswith("http://") and not url.startswith("https://"):
                 url = "https://" + url
             webbrowser.open(url)
